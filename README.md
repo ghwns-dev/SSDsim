@@ -5,7 +5,7 @@ The SSDsim (v1.9) is a simple simulator for modeling the general SSD architectur
 (8KB of total NAND Flash, max logical address is 1024, physical page addrses is 8192)
 Despite of the small size of the model, the basic operations of SSD controller such as READ, ERASE, PROGRAM and Address Mapping, Garbage Collection
 are managed in the simulator. The SSDsim shows how many cycles are needed for total host reqeust.
-So one can realize his/her own idea for boosting the performance in terms of the lateny.
+So one can realize the idea for boosting the performance in terms of the lateny.
 
 Garbage Collecton has been managed since SSDsim v1.7, and timing parameter calculation has been modified.
 SSDsim v1.7 revision uses the free block pointer for reducing the latency for finding the free block, and number of free pagse and invalid pages
