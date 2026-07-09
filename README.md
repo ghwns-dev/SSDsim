@@ -1,23 +1,20 @@
-#2025/08/19 
-#Author : Hojun Kim
-#EEE Yonsei, Hanwha Systems corps.
+#2026/07/08
 
-The SSDsim (v2.0) is a simple simulator for modeling the general SSD architecture, with relatively small size.
+The SSDsim (v2.1) is a simple simulator for modeling the general SSD architecture, with relatively small size.
 (8KB of total NAND Flash, max logical address is 1024, physical page addrses is 8192)
-Despite of the small size of the model, the basic operations of SSD controller such as READ, ERASE, PROGRAM and Address Mapping, Garbage Collection are managed in the simulator. The SSDsim shows how many cycles are needed for total host reqeust.
-So one can realize his/her own idea for boosting the performance in terms of the lateny.
+Despite of the small size of the model, the basic operations of SSD controller such as READ, ERASE, PROGRAM and address mapping, garbage collection are managed in the simulator. The SSDsim shows how many cycles are needed for total host reqeust.
+So everyone can realize their own idea for boosting the performance in terms of the lateny.
 
-Garbage Collecton has been managed since SSDsim v1.7, and timing parameter calculation has been modified.
 SSDsim v1.7 revision uses the free block pointer for reducing the latency for finding the free block, and number of free pagse and invalid pages
 stored in the struct "block_t". This policy makes the SSDsim runs within the 5% cycles compared to the SSDsim v1.6 with the same running config. 
 (max buffer size 32, iteration count 8192, which is really fast)
 Now the address has been scaled, I recommend that you run the simulator with max buffer size 256, iteration count 262144.
 You can simply run the process by executing the shell script file ./run.sh
-The most critical issue of this revison (1.81) is there are some cases that at the end of the execution, number of the valid flash pages exceeds the max logical address.
-It should be handled before the revision 1.9. And it completely resolved at revision 2.0.
+The most critical issue of this revison (1.8) is there are some cases that at the end of the execution, number of the valid flash pages exceeds the max logical address.
+And it has been completely resolved at revision 2.0.
 Since the simulator has no parallelism so far, starting from revision 2.1 will implement the parallelism and background GC.
 So the next release will be able to compare the total cycles with non-parallel version of SSDsim (~ v.2.0)
-Further sophisticated Address Mapping algorithm, addition of other components reducing the latency would be done within some next Releases.
+Further sophisticated address mapping algorithm, addition of other components reducing the latency would be done within some next releases.
   
 The main function generates the random host-side command for reqeusting the data processing, READ, WRITE.
 FTL (ssdcontroller) tranlates them into a proper form and stores them in the Queue located in DRAM.
@@ -60,14 +57,14 @@ $./build/SSDsim -benchmark=0 -max_buffer_size=256 -iteration_cnt=262144 (recomme
     2 : dedicated to READ
 
 Execution with buffer size 256 and iteration count 262144 will fully utilize the 64KB Flash Memory (heuristic)
-And the case would show how Garbage Collection operates.
+And the case would show how garbage collection operates.
 
 Executing the SSDsim with config file is not yet supported, but soon it will be accessible.
 (e.g. ./build/SSDsim ./config/SSD_model_name.ini)
-It's because the benchmark ability of the author is not yet matured.
 
 Any modification is up to you and welcomed, enjoy your work.
 
+* Remaining works
 1. Chip level parallelism
-2. Background Garbage Collection
-3. Channel Scheduler
+2. Channel Scheduler
+3. Background Garbage Collection
