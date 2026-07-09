@@ -1,0 +1,304 @@
+#include "ssdcontroller.h"
+
+ssdcontroller::ssdcontroller(int size) 
+{
+    init_ticks();
+    dram_controller = new dramcontroller(size);
+    flash_controller = new flashcontroller();
+}
+
+ssdcontroller::~ssdcontroller() 
+{
+    delete dram_controller;
+    delete flash_controller;
+
+    delete_ticks();
+    free(history_table);
+}
+
+void ssdcontroller::initialize()
+{
+    dram_controller->initialize();
+    flash_controller->initialize();
+
+    history_table = (history_t*)malloc(sizeof(history_t) * MAX_LOGICAL_ADDRESS);
+
+    for(lpa_t lpa = 0; lpa < MAX_LOGICAL_ADDRESS; lpa++){
+        history_table[lpa].read_cnt = 0;
+        history_table[lpa].program_cnt = 0;
+    }
+
+	uint64_t failed_command = 0;
+	uint64_t succeed_command = 0;
+
+    return;
+}
+
+table_entry_t ssdcontroller::get_mapping_table_entry(lpa_t i_lpa)
+{
+    table_entry_t table_entry = dram_controller->get_mapping_table_entry(i_lpa);
+
+    return table_entry;
+}
+
+void ssdcontroller::push_command(cmd_t i_cmd)
+{
+    dram_controller->push_command_queue(i_cmd);
+    return;
+}
+
+cmd_t ssdcontroller::get_command()
+{	
+	if(is_cmd_queue_empty()) return { NONE, NULL, NULL };
+	
+    cmd_t cmd = dram_controller->get_command();
+    return cmd;
+}
+
+bool ssdcontroller::is_cmd_queue_empty()
+{
+	return dram_controller->is_cmd_queue_empty();
+}
+
+bool ssdcontroller::garbage_collection_triggered()
+{
+	if(flash_controller->get_number_of_free_blocks()  < GC_START_THRESHOLD) return true;
+ 
+	return false;
+}
+
+void ssdcontroller::garbage_collection() 
+{
+	if(!flash_controller->has_invalid_page()) return;
+
+	pba_t victim_block = flash_controller->get_victim_block();
+
+	if(victim_block == FAULT)
+	{
+		std::cout << "no victim block\n";
+		return;
+	}
+
+	std::queue<lpa_t> lpa_buffer;
+
+    for(uint16_t page = 0; page < PAGE_PER_BLOCK; page++)
+    {
+        page_t page_entry = flash_controller->get_page(victim_block, page);
+
+        ppa_t old_ppa = victim_block * PAGE_PER_BLOCK + page;
+
+        if(page_entry.page_status != VALID)
+            continue;
+
+        lpa_t lpa = dram_controller->get_lpa_from_mapping_table(old_ppa);
+
+        lpa_buffer.push(lpa);
+
+        dram_controller->push_copy_data_buffer(page_entry.data); // data buffer for being copied
+    }
+
+    flash_controller->erase_block(victim_block);
+
+    while(!lpa_buffer.empty() &&
+          !dram_controller->is_copy_data_buffer_empty())
+    {
+        lpa_t lpa = lpa_buffer.front();
+        lpa_buffer.pop();
+
+        unit_t data = dram_controller->get_copy_data_buffer();
+
+        ppa_t new_ppa = flash_controller->find_free_page();  // request for lpa with data should be done with new_ppa
+
+        if(new_ppa == FAULT)
+        {
+            std::cout
+                << "gc error : no free page\n";
+            exit(-1);
+        }
+
+        dram_controller->update_mapping_table(lpa,new_ppa,VALID);
+
+        write_to_nand(new_ppa, data);
+    }
+}
+
+bool ssdcontroller::read(lpa_t i_lpa, unit_t *i_data_ptr)
+{
+    table_entry_t table_entry = get_mapping_table_entry(i_lpa);
+
+    if(table_entry.page_status != VALID){
+        std::memset(i_data_ptr, 0x00, sizeof(unit_t));
+        return false;
+    }
+
+    unit_t data = flash_controller->read_page(table_entry.PPA);
+
+    std::memcpy(i_data_ptr, &data, sizeof(unit_t));
+
+    history_table[i_lpa].read_cnt++;
+    
+	return true;
+}
+
+bool ssdcontroller::program(lpa_t i_lpa, unit_t i_data)
+{
+	history_table[i_lpa].program_cnt++;
+	
+	if(dram_controller->get_write_buffer_size() < dram_controller->get_max_write_buffer_size()) {
+		write_to_buffer(i_lpa, i_data);
+		return true;
+	}
+
+	while(!dram_controller->is_write_buffer_empty()){
+		
+		buffer_entry_t buffer_entry = dram_controller->get_front_buffer_entry();
+
+		table_entry_t table_entry = dram_controller->get_mapping_table_entry(buffer_entry.LPA);
+
+		lpa_t lpa = buffer_entry.LPA;
+	
+		if(table_entry.page_status == INIT || table_entry.page_status == FREE){
+			ppa_t ppa = flash_controller->find_free_page();
+			
+			if(ppa == FAULT)
+			{
+				garbage_collection();       // foreground Garbage Collection
+				
+				ppa = flash_controller->find_free_page();
+			
+				if(ppa == FAULT)
+				{
+					std::cout << "SSD is full\n";
+					exit(-1);
+				}
+			}
+			
+			dram_controller->update_mapping_table(lpa, ppa, VALID);
+			
+			write_to_nand(ppa, buffer_entry.data);	// segfault, ppa == 8192
+		}
+		else {	
+			// VALID or INVALID
+			// There is no case that table entry is set as FREE status
+			ppa_t prev_ppa = table_entry.PPA;
+			
+			ppa_t ppa = flash_controller->find_free_page();
+			
+			if(ppa == FAULT)
+			{
+				garbage_collection();
+
+				ppa = flash_controller->find_free_page();
+				// 2026/06/15
+				if(ppa == FAULT)
+				{
+					std::cout << "program failed\n";
+					exit(-1);
+				}
+			}	
+			write_to_nand(ppa, buffer_entry.data); 
+			
+			dram_controller->update_mapping_table(lpa, ppa, VALID); 
+			
+			if(table_entry.page_status == VALID) flash_controller->update_page_status(prev_ppa, INVALID);
+		}
+	}
+    return true;
+}
+
+void ssdcontroller::write_to_buffer(lpa_t i_lpa, unit_t i_data)
+{
+    dram_controller->write_to_buffer(i_lpa, i_data);
+
+    return;
+}
+
+void ssdcontroller::write_to_nand(ppa_t i_ppa, unit_t i_data)
+{
+	flash_controller->program_page(i_ppa, i_data);
+
+    return;
+}
+
+bool ssdcontroller::execute()
+{
+    if(dram_controller->is_cmd_queue_empty()) {
+        return false;
+    }
+
+    bool valid = true;
+    cmd_t cmd = get_command();
+
+    switch(cmd.type){
+        case CMD::READ:
+            unit_t data;
+            valid = read(cmd.LPA, &data);
+            break;
+        case CMD::PROGRAM:
+			valid = program(cmd.LPA, cmd.data);
+            break;
+    }
+
+	if(valid == false) failed_command++;
+	else succeed_command++;
+
+    return valid;
+}
+
+void ssdcontroller::show_valid_flash_pages()
+{
+    flash_controller->show_valid_flash_pages();
+
+    return;
+}
+
+void ssdcontroller::log_flash_status()
+{
+	flash_controller->log_flash_status();
+	
+	return;
+}
+
+void ssdcontroller::log_table_status()
+{
+    dram_controller->log_table_status();
+    
+	return;
+}
+
+void ssdcontroller::show_execution_result()
+{    
+	uint64_t total_read_cnt = 0;
+    uint64_t total_program_cnt = 0;
+    uint64_t total_erase_cnt = flash_controller->get_total_erase_count();
+
+    for(lpa_t lpa = 0; lpa < MAX_LOGICAL_ADDRESS; lpa++){
+        total_read_cnt += history_table[lpa].read_cnt;
+        total_program_cnt += history_table[lpa].program_cnt;
+    }
+
+    std::cout << "\ntotal read : " << total_read_cnt;
+    std::cout << "\ntotal program : " << total_program_cnt;
+    std::cout << "\ntotal erase of blocks : " << total_erase_cnt;
+
+    std::cout << "\n\ntotal request : " << failed_command + succeed_command;
+    std::cout << "\nsucceed request : " << succeed_command;
+    std::cout << "\nfailed request : " << failed_command;
+    std::cout << "\nrequest accuracy : " << (static_cast<double>(succeed_command) / static_cast<double>(failed_command + succeed_command)) * 100.0 << "%";
+    std::cout << "\n\ntotal cycles : " << flash_controller->get_total_cycles();
+    std::cout << "\n\n";
+	
+	return;
+}
+
+void ssdcontroller::show_stats()
+{
+#ifdef _LOG_
+	log_flash_status();
+    log_table_status();
+#endif
+    show_valid_flash_pages();
+	show_execution_result();
+    return;
+}
+
