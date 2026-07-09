@@ -30,31 +30,31 @@ SSDsim_v2.0/
 
 ├── src/
 
-│   ├── main.cc
+│      ├── main.cc
 
-│   ├── ssdcontroller.h
+│      ├── ssdcontroller.h
 
-│   ├── ssdcontroller.cc
+│      ├── ssdcontroller.cc
 
-│   ├── dramcontroller.h
+│      ├── dramcontroller.h
 
-│   ├── dramcontroller.cc
+│      ├── dramcontroller.cc
 
-│   ├── flashcontroller.h
+│      ├── flashcontroller.h
 
-│   ├── flashcontroller.cc
+│      ├── flashcontroller.cc
 
 │
 
 ├── src/include/
 
-│   ├── defs.h
+│      ├── defs.h
 
-│   ├── defs.cc
+│      ├── defs.cc
 
-│   ├── random.h
+│      ├── random.h
 
-│   ├── random.cc
+│      ├── random.cc
 
 │
 
