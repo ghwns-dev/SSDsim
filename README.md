@@ -23,23 +23,41 @@ Flash Memory is initialized with filled the data thus the host READ command woul
 The software tree is as below.
 
 SSDsim_v2.0/
+
 ├── Makefile
+
 ├── README.md
+
 ├── src/
+
 │   ├── main.cc
+
 │   ├── ssdcontroller.h
+
 │   ├── ssdcontroller.cc
+
 │   ├── dramcontroller.h
+
 │   ├── dramcontroller.cc
+
 │   ├── flashcontroller.h
+
 │   ├── flashcontroller.cc
+
 │
+
 ├── src/include/
+
 │   ├── defs.h
+
 │   ├── defs.cc
+
 │   ├── random.h
+
 │   ├── random.cc
+
 │
+
 └── build/SSDsim
 
 Further release shall obey this structure, and it is expected that there will be no dramatic change of the structrue.
