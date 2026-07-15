@@ -40,20 +40,20 @@ void show_configuration()
     return;
 }
 
-cmd_t generate_command(int i_benchmark)
+host_command_t generate_command(int i_benchmark)
 {
-    cmd_t command;
+    host_command_t command;
 
     switch(i_benchmark)
     {
         case BENCHMARK_RANDOM:
-            command.type = cmd_type_generator();
+            command.type = static_cast<HOST_COMMAND_TYPE>(cmd_type_generator());
             break;
         case BENCHMARK_PROGRAM:
-            command.type = CMD::PROGRAM;
+            command.type = HOST_COMMAND_TYPE::HOST_WRITE;
             break;
         case BENCHMARK_READ:
-            command.type = CMD::READ;
+            command.type = HOST_COMMAND_TYPE::HOST_READ;
             break;
         default:
             break;
@@ -61,7 +61,7 @@ cmd_t generate_command(int i_benchmark)
    
     command.LPA = logical_address_generator();
 
-	if(command.type == CMD::PROGRAM) command.data = double_words_data_generator();
+	if(command.type == HOST_COMMAND_TYPE::HOST_WRITE) command.data = double_words_data_generator();
 
     return command;
 }
@@ -95,11 +95,17 @@ int main(int argc, char* argv[]){
     std::cout << "\n\n/*****SSDsim - simulation start*****/\n";
     
 	for(int i = 0; i < iter_cnt; i++) {
-        cmd_t cmd = generate_command(benchmark);
+        host_command_t cmd = generate_command(benchmark);
         ftl->push_command(cmd);
     }
-
+    /*
 	while(!ftl->is_cmd_queue_empty()){
+        ftl->execute();
+    }
+    */
+
+    while(!ftl->is_idle())
+    {
         ftl->execute();
     }
 

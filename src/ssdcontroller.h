@@ -3,6 +3,7 @@
 
 #define FREE_BLOCK_TH 2
 #define ERASE_PERIOD 100
+#define TRANSACTION_FLUSH_TH 16
 
 class ssdcontroller {
 public:
@@ -13,15 +14,24 @@ public:
 
         void initialize();
 
-        void push_command(cmd_t);
-        cmd_t get_command();
+        void push_command(host_command_t);
+        host_command_t get_command();
 		bool is_cmd_queue_empty();
 
+        void push_read_transaction(ppa_t);
+        void push_program_transaction(ppa_t, unit_t);
+        void push_erase_transaction(pba_t);
+
         table_entry_t get_mapping_table_entry(lpa_t);
+
+        bool is_idle();
 
         bool execute();
         bool read(lpa_t, unit_t*);
         bool program(lpa_t, unit_t);
+
+        void generate_transaction_from_command(host_command_t);
+        bool schedule_transaction();
 
         bool garbage_collection_triggered();
         void garbage_collection();

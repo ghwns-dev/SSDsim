@@ -87,21 +87,6 @@ typedef struct buffer_entry {
 	unit_t data;
 } buffer_entry_t;
 
-// Cmd definition
-enum CMD {
-	READ = 0,
-	PROGRAM,
-	ERASE,
-	NONE
-};
-
-// Host-side Command
-typedef struct cmd {
-	uint8_t type;
-	lpa_t LPA;	
-	unit_t data;
-} cmd_t;
-
 typedef struct history {
         uint64_t read_cnt;
         uint64_t program_cnt;

@@ -18,6 +18,9 @@ void count_ticks(uint64_t increment){
 
 uint64_t get_ticks(){
         uint64_t _ticks = *ticks;
+        /*
+        to be returning the current system time cycle
+        */
         return _ticks;
 }
 

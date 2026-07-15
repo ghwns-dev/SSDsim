@@ -41,17 +41,17 @@ table_entry_t ssdcontroller::get_mapping_table_entry(lpa_t i_lpa)
     return table_entry;
 }
 
-void ssdcontroller::push_command(cmd_t i_cmd)
+void ssdcontroller::push_command(host_command_t i_cmd)
 {
     dram_controller->push_command_queue(i_cmd);
     return;
 }
 
-cmd_t ssdcontroller::get_command()
+host_command_t ssdcontroller::get_command()
 {	
-	if(is_cmd_queue_empty()) return { NONE, NULL, NULL };
+	if(is_cmd_queue_empty()) return { HOST_NONE, NULL, NULL };
 	
-    cmd_t cmd = dram_controller->get_command();
+    host_command_t cmd = dram_controller->get_command();
     return cmd;
 }
 
@@ -59,6 +59,60 @@ bool ssdcontroller::is_cmd_queue_empty()
 {
 	return dram_controller->is_cmd_queue_empty();
 }
+
+bool ssdcontroller::is_idle()
+{   
+    return
+        dram_controller->is_cmd_queue_empty() &&
+        dram_controller->is_transaction_queue_empty();
+        // && !scheduler.has_pending_transaction();
+}
+
+void ssdcontroller::push_read_transaction(ppa_t i_ppa)
+{
+    transaction_t trx;
+    
+    trx.type = NAND_READ;
+    trx.ppa = i_ppa;
+    trx.pba = flash_controller->get_block_address(i_ppa);
+    trx.channel = flash_controller->get_channel(trx.pba);
+    trx.tick = get_ticks();
+
+    dram_controller->push_transaction_queue(trx);
+
+    return;
+}
+
+void ssdcontroller::push_program_transaction(ppa_t i_ppa, unit_t i_data)
+{
+    transaction_t trx;
+    
+    trx.type = NAND_PROGRAM;
+    trx.ppa = i_ppa;
+    trx.pba = flash_controller->get_block_address(i_ppa);
+    trx.channel = flash_controller->get_channel(trx.pba);
+    trx.data = i_data;
+    trx.tick = get_ticks();
+
+    dram_controller->push_transaction_queue(trx);
+
+    return;
+}
+
+void ssdcontroller::push_erase_transaction(pba_t i_pba)
+{
+    transaction_t trx;
+
+    trx.type = NAND_ERASE;
+    trx.pba = i_pba;
+    trx.channel = flash_controller->get_channel(trx.pba);
+    trx.tick = get_ticks();
+
+    dram_controller->push_transaction_queue(trx);
+
+    return;
+}
+
 
 bool ssdcontroller::garbage_collection_triggered()
 {
@@ -118,7 +172,8 @@ void ssdcontroller::garbage_collection()
 
         dram_controller->update_mapping_table(lpa,new_ppa,VALID);
 
-        write_to_nand(new_ppa, data);
+        // write_to_nand(new_ppa, data);
+        push_program_transaction(new_ppa, data);
     }
 }
 
@@ -175,7 +230,8 @@ bool ssdcontroller::program(lpa_t i_lpa, unit_t i_data)
 			
 			dram_controller->update_mapping_table(lpa, ppa, VALID);
 			
-			write_to_nand(ppa, buffer_entry.data);	// segfault, ppa == 8192
+			// write_to_nand(ppa, buffer_entry.data);	// segfault, ppa == 8192
+            push_program_transaction(ppa, buffer_entry.data);
 		}
 		else {	
 			// VALID or INVALID
@@ -196,14 +252,78 @@ bool ssdcontroller::program(lpa_t i_lpa, unit_t i_data)
 					exit(-1);
 				}
 			}	
-			write_to_nand(ppa, buffer_entry.data); 
 			
+            // write_to_nand(ppa, buffer_entry.data); 
+            push_program_transaction(ppa, buffer_entry.data);
+
 			dram_controller->update_mapping_table(lpa, ppa, VALID); 
 			
 			if(table_entry.page_status == VALID) flash_controller->update_page_status(prev_ppa, INVALID);
 		}
 	}
     return true;
+}
+
+void ssdcontroller::generate_transaction_from_command(host_command_t i_cmd)
+{
+    transaction_t trx;
+    table_entry_t table_entry = dram_controller->get_mapping_table_entry(i_cmd.LPA);
+
+    switch(i_cmd.type)
+    {
+        case HOST_READ:
+            trx.type = NAND_READ;
+            trx.ppa = table_entry.PPA;
+            trx.data = NULL;
+            trx.pba = flash_controller->get_block_address(trx.ppa);
+            trx.channel = flash_controller->get_channel(trx.pba);
+            trx.tick = get_ticks();
+            break;
+        
+        case HOST_WRITE:
+            trx.type = NAND_PROGRAM;
+            trx.ppa = table_entry.PPA;
+            trx.data = i_cmd.data;
+            trx.pba = flash_controller->get_block_address(trx.ppa);
+            trx.channel = flash_controller->get_channel(trx.pba);
+            trx.tick = get_ticks();
+            break;
+
+        default:
+            trx.type = NAND_NONE;
+            break;
+    }
+
+    dram_controller->push_transaction_queue(trx);
+    return;
+}
+
+bool ssdcontroller::schedule_transaction()
+{
+    while(!dram_controller->is_transaction_queue_empty())
+    {
+        transaction_t trx = dram_controller->get_transaction();
+
+        unit_t data;
+        pba_t pba = flash_controller->get_block_address(trx.ppa);
+
+        switch(trx.type)
+        {
+            case NAND_PROGRAM:
+                flash_controller->program_page(trx.ppa, trx.data);
+                break;
+
+            case NAND_READ:
+                data = flash_controller->read_page(trx.ppa);
+                break;
+
+            case NAND_ERASE:
+                flash_controller->erase_block(pba);
+                break;
+        }
+    }
+
+    return;
 }
 
 void ssdcontroller::write_to_buffer(lpa_t i_lpa, unit_t i_data)
@@ -227,16 +347,13 @@ bool ssdcontroller::execute()
     }
 
     bool valid = true;
-    cmd_t cmd = get_command();
+    host_command_t cmd = get_command(); 
 
-    switch(cmd.type){
-        case CMD::READ:
-            unit_t data;
-            valid = read(cmd.LPA, &data);
-            break;
-        case CMD::PROGRAM:
-			valid = program(cmd.LPA, cmd.data);
-            break;
+    generate_transaction_from_command(cmd);
+
+    if(dram_controller->get_transaction_queue_size() == TRANSACTION_FLUSH_TH)
+    {
+        schedule_transaction();
     }
 
 	if(valid == false) failed_command++;

@@ -1,4 +1,6 @@
 #include "include/defs.h"
+#include "include/command.h"
+#include "include/transaction.h"
 #include <fstream>
 
 class dramcontroller {
@@ -10,10 +12,15 @@ public:
 
     table_entry_t get_mapping_table_entry(lpa_t);
 
-    void push_command_queue(cmd_t);
-    cmd_t get_command();
+    void push_command_queue(host_command_t);
+    host_command_t get_command();
     int get_command_queue_size();
 	bool is_cmd_queue_empty();
+
+    void push_transaction_queue(transaction_t);
+    transaction_t get_transaction();
+    int get_transaction_queue_size();
+    bool is_transaction_queue_empty();
 
     void update_mapping_table(lpa_t, ppa_t, uint16_t);
 
@@ -33,7 +40,9 @@ public:
     void log_table_status();
 
 private:
-    std::queue<cmd_t> command_queue;
+    std::queue<host_command_t> command_queue;
+    std::queue<transaction_t> transaction_queue;
+
     std::queue<buffer_entry_t> write_buffer;
     std::queue<unit_t> copy_data_buffer;
 
