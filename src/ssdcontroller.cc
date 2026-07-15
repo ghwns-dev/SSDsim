@@ -76,7 +76,7 @@ void ssdcontroller::push_read_transaction(ppa_t i_ppa)
     trx.ppa = i_ppa;
     trx.pba = flash_controller->get_block_address(i_ppa);
     trx.channel = flash_controller->get_channel(trx.pba);
-    trx.tick = get_ticks();
+    trx.submit_tick = get_ticks();
 
     dram_controller->push_transaction_queue(trx);
 
@@ -92,7 +92,7 @@ void ssdcontroller::push_program_transaction(ppa_t i_ppa, unit_t i_data)
     trx.pba = flash_controller->get_block_address(i_ppa);
     trx.channel = flash_controller->get_channel(trx.pba);
     trx.data = i_data;
-    trx.tick = get_ticks();
+    trx.submit_tick = get_ticks();
 
     dram_controller->push_transaction_queue(trx);
 
@@ -106,7 +106,7 @@ void ssdcontroller::push_erase_transaction(pba_t i_pba)
     trx.type = NAND_ERASE;
     trx.pba = i_pba;
     trx.channel = flash_controller->get_channel(trx.pba);
-    trx.tick = get_ticks();
+    trx.submit_tick = get_ticks();
 
     dram_controller->push_transaction_queue(trx);
 
@@ -277,7 +277,7 @@ void ssdcontroller::generate_transaction_from_command(host_command_t i_cmd)
             trx.data = NULL;
             trx.pba = flash_controller->get_block_address(trx.ppa);
             trx.channel = flash_controller->get_channel(trx.pba);
-            trx.tick = get_ticks();
+            trx.submit_tick = get_ticks();
             break;
         
         case HOST_WRITE:
@@ -286,7 +286,7 @@ void ssdcontroller::generate_transaction_from_command(host_command_t i_cmd)
             trx.data = i_cmd.data;
             trx.pba = flash_controller->get_block_address(trx.ppa);
             trx.channel = flash_controller->get_channel(trx.pba);
-            trx.tick = get_ticks();
+            trx.submit_tick = get_ticks();
             break;
 
         default:

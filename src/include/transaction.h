@@ -20,5 +20,5 @@ struct transaction_t
 
     channel_t channel;
 
-    uint64_t tick;  // pushed time
+    uint64_t submit_tick;  // pushed time
 };
