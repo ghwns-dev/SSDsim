@@ -27,10 +27,9 @@ public:
         bool is_idle();
 
         bool execute();
-        bool read(lpa_t, unit_t*);
-        bool program(lpa_t, unit_t);
+        bool host_read(lpa_t, unit_t*);
+        bool host_write(lpa_t, unit_t);
 
-        void generate_transaction_from_command(host_command_t);
         bool schedule_transaction();
         transaction_t select_transaction();
         transaction_t find_least_recent_transaction(transaction_t *, int);

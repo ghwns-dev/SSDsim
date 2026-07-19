@@ -152,6 +152,8 @@ void ssdcontroller::garbage_collection()
     }
 
     flash_controller->erase_block(victim_block);
+    // push_erase_transaction(victim_block);
+    // schedule_transaction();
 
     while(!lpa_buffer.empty() &&
           !dram_controller->is_copy_data_buffer_empty())
@@ -172,12 +174,13 @@ void ssdcontroller::garbage_collection()
 
         dram_controller->update_mapping_table(lpa,new_ppa,VALID);
 
-        // write_to_nand(new_ppa, data);
-        push_program_transaction(new_ppa, data);
+        write_to_nand(new_ppa, data);
+        // push_program_transaction(new_ppa, data);
+        // schedule_transaction();
     }
 }
 
-bool ssdcontroller::read(lpa_t i_lpa, unit_t *i_data_ptr)
+bool ssdcontroller::host_read(lpa_t i_lpa, unit_t *i_data_ptr)
 {
     table_entry_t table_entry = get_mapping_table_entry(i_lpa);
 
@@ -186,16 +189,18 @@ bool ssdcontroller::read(lpa_t i_lpa, unit_t *i_data_ptr)
         return false;
     }
 
-    unit_t data = flash_controller->read_page(table_entry.PPA);
-
-    std::memcpy(i_data_ptr, &data, sizeof(unit_t));
-
+    // unit_t data = flash_controller->read_page(table_entry.PPA);
+    // std::memcpy(i_data_ptr, &data, sizeof(unit_t));
+    push_read_transaction(table_entry.PPA);
+   
+    // std::cout << "host read, push_read_transaction PPA : " << table_entry.PPA << '\n';
+   
     history_table[i_lpa].read_cnt++;
     
 	return true;
 }
 
-bool ssdcontroller::program(lpa_t i_lpa, unit_t i_data)
+bool ssdcontroller::host_write(lpa_t i_lpa, unit_t i_data)
 {
 	history_table[i_lpa].program_cnt++;
 	
@@ -232,6 +237,7 @@ bool ssdcontroller::program(lpa_t i_lpa, unit_t i_data)
 			
 			// write_to_nand(ppa, buffer_entry.data);	// segfault, ppa == 8192
             push_program_transaction(ppa, buffer_entry.data);
+            // std::cout << "host write, push_program_transaction PPA : " << ppa << '\n';
 		}
 		else {	
 			// VALID or INVALID
@@ -255,6 +261,7 @@ bool ssdcontroller::program(lpa_t i_lpa, unit_t i_data)
 			
             // write_to_nand(ppa, buffer_entry.data); 
             push_program_transaction(ppa, buffer_entry.data);
+            // std::cout << "host write, push_program_transaction PPA : " << ppa << '\n';
 
 			dram_controller->update_mapping_table(lpa, ppa, VALID); 
 			
@@ -262,50 +269,6 @@ bool ssdcontroller::program(lpa_t i_lpa, unit_t i_data)
 		}
 	}
     return true;
-}
-
-void ssdcontroller::generate_transaction_from_command(host_command_t i_cmd)
-{
-    transaction_t trx;
-    table_entry_t table_entry = dram_controller->get_mapping_table_entry(i_cmd.LPA);
-
-    if(table_entry.page_status != VALID)
-    {
-        while(table_entry.PPA == FAULT)
-        {
-            table_entry.PPA = flash_controller->find_free_page();
-        }
-       
-        dram_controller->update_mapping_table(i_cmd.LPA, table_entry.PPA, VALID);
-    }
-
-    switch(i_cmd.type)
-    {
-        case HOST_READ:
-            trx.type = NAND_READ;
-            trx.ppa = table_entry.PPA;
-            trx.data = NULL;
-            trx.pba = flash_controller->get_block_address(trx.ppa);
-            trx.channel = flash_controller->get_channel(trx.pba);
-            trx.submit_tick = get_ticks();
-            break;
-        
-        case HOST_WRITE:
-            trx.type = NAND_PROGRAM;
-            trx.ppa = table_entry.PPA;
-            trx.data = i_cmd.data;
-            trx.pba = flash_controller->get_block_address(trx.ppa);
-            trx.channel = flash_controller->get_channel(trx.pba);
-            trx.submit_tick = get_ticks();
-            break;
-
-        default:
-            trx.type = NAND_NONE;
-            break;
-    }
-
-    dram_controller->push_transaction_queue(trx);
-    return;
 }
 
 bool ssdcontroller::schedule_transaction()
@@ -345,7 +308,7 @@ transaction_t ssdcontroller::select_transaction()
 
     int transaction_queue_size = dram_controller->get_transaction_queue_size();
 
-    int iteration_cnt = transaction_queue_size;
+    int iteration_cnt = 0;
 
     transaction_t read_table[transaction_queue_size];
     transaction_t program_table[transaction_queue_size];
@@ -355,7 +318,7 @@ transaction_t ssdcontroller::select_transaction()
     int program_table_size = 0;
     int erase_table_size = 0;
 
-    while(iteration_cnt < TRANSACTION_FLUSH_TH)
+    while(iteration_cnt < transaction_queue_size)
     {
         transaction_t trx_ = dram_controller->get_transaction();
 
@@ -443,9 +406,23 @@ bool ssdcontroller::execute()
     bool valid = true;
     host_command_t cmd = get_command(); 
 
-    generate_transaction_from_command(cmd);
+    unit_t data;
 
-    if(dram_controller->get_transaction_queue_size() == TRANSACTION_FLUSH_TH)
+    switch(cmd.type)
+    {
+        case HOST_COMMAND_TYPE::HOST_READ:
+            valid = host_read(cmd.LPA, &data);
+            break;
+
+        case HOST_COMMAND_TYPE::HOST_WRITE:
+            valid = host_write(cmd.LPA, cmd.data);
+            break;
+
+        default:
+            break;
+    }
+
+    if(dram_controller->get_transaction_queue_size() >= TRANSACTION_FLUSH_TH)
     {
         schedule_transaction();
     }

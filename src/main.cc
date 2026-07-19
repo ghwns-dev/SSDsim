@@ -98,11 +98,6 @@ int main(int argc, char* argv[]){
         host_command_t cmd = generate_command(benchmark);
         ftl->push_command(cmd);
     }
-    /*
-	while(!ftl->is_cmd_queue_empty()){
-        ftl->execute();
-    }
-    */
 
     while(!ftl->is_idle())
     {
