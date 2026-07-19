@@ -269,6 +269,16 @@ void ssdcontroller::generate_transaction_from_command(host_command_t i_cmd)
     transaction_t trx;
     table_entry_t table_entry = dram_controller->get_mapping_table_entry(i_cmd.LPA);
 
+    if(table_entry.page_status != VALID)
+    {
+        while(table_entry.PPA == FAULT)
+        {
+            table_entry.PPA = flash_controller->find_free_page();
+        }
+       
+        dram_controller->update_mapping_table(i_cmd.LPA, table_entry.PPA, VALID);
+    }
+
     switch(i_cmd.type)
     {
         case HOST_READ:
@@ -302,7 +312,10 @@ bool ssdcontroller::schedule_transaction()
 {
     while(!dram_controller->is_transaction_queue_empty())
     {
-        transaction_t trx = dram_controller->get_transaction();
+        transaction_t trx = select_transaction();
+        // transaction_t trx = dram_controller->get_transaction();
+
+        if(trx.type == NAND_NONE) return false;
 
         unit_t data;
         pba_t pba = flash_controller->get_block_address(trx.ppa);
@@ -323,7 +336,88 @@ bool ssdcontroller::schedule_transaction()
         }
     }
 
-    return;
+    return true;
+}
+
+transaction_t ssdcontroller::select_transaction()
+{
+    transaction_t trx;
+
+    int transaction_queue_size = dram_controller->get_transaction_queue_size();
+
+    int iteration_cnt = transaction_queue_size;
+
+    transaction_t read_table[transaction_queue_size];
+    transaction_t program_table[transaction_queue_size];
+    transaction_t erase_table[transaction_queue_size];
+
+    int read_table_size = 0;
+    int program_table_size = 0;
+    int erase_table_size = 0;
+
+    while(iteration_cnt < TRANSACTION_FLUSH_TH)
+    {
+        transaction_t trx_ = dram_controller->get_transaction();
+
+        switch(trx_.type)
+        {
+            case NAND_PROGRAM:
+                memcpy(&program_table[program_table_size++], &trx_, sizeof(transaction_t));
+                break;
+            case NAND_READ:
+                memcpy(&read_table[read_table_size++], &trx_, sizeof(transaction_t));
+                break;
+            case NAND_ERASE:
+                memcpy(&erase_table[erase_table_size++], &trx_, sizeof(transaction_t));
+                break;
+            default:
+            break;
+        }
+        iteration_cnt++;
+        dram_controller->push_transaction_queue(trx_);
+    } 
+
+    iteration_cnt = 0;
+
+    if(read_table_size > 0)
+    {
+        trx = find_least_recent_transaction(read_table, read_table_size);
+    }
+    else if(program_table_size > 0)
+    {
+        trx = find_least_recent_transaction(program_table, program_table_size);
+    }
+    else if(erase_table_size > 0)
+    {
+        trx = find_least_recent_transaction(erase_table, erase_table_size);
+    }
+    else
+    {
+        trx.type = NAND_NONE;
+    }
+
+    return trx;
+}
+
+transaction_t ssdcontroller::find_least_recent_transaction(transaction_t *i_table, int i_size)
+{
+    transaction_t trx;
+
+    int least_submit_tick = get_ticks();
+    int least_submit_transaction_index = -1;
+
+    for(int i = 0; i < i_size; i++)
+    {
+        if(i_table[i].submit_tick < least_submit_tick)
+        {
+            least_submit_transaction_index = i;
+            least_submit_tick = i_table[i].submit_tick;
+        }
+    }
+
+    trx = dram_controller->get_transaction_with_parameter(&i_table[least_submit_transaction_index]);
+
+    return trx;
 }
 
 void ssdcontroller::write_to_buffer(lpa_t i_lpa, unit_t i_data)

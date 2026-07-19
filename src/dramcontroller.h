@@ -19,6 +19,7 @@ public:
 
     void push_transaction_queue(transaction_t);
     transaction_t get_transaction();
+    transaction_t get_transaction_with_parameter(transaction_t*);
     int get_transaction_queue_size();
     bool is_transaction_queue_empty();
 

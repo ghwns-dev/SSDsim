@@ -32,6 +32,8 @@ public:
 
         void generate_transaction_from_command(host_command_t);
         bool schedule_transaction();
+        transaction_t select_transaction();
+        transaction_t find_least_recent_transaction(transaction_t *, int);
 
         bool garbage_collection_triggered();
         void garbage_collection();

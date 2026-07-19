@@ -101,6 +101,33 @@ transaction_t dramcontroller::get_transaction()
 	return trx;
 }
 
+transaction_t dramcontroller::get_transaction_with_parameter(transaction_t *i_trx)
+{
+	transaction_t trx;
+
+	int total_iteration = get_transaction_queue_size();
+	int iteration = 0;
+
+	while(iteration < total_iteration)
+	{
+		transaction_t cur_trx = transaction_queue.front();
+		transaction_queue.pop();
+
+		if(memcmp(&cur_trx, i_trx, sizeof(transaction_t)) == 0)
+		{
+			trx = cur_trx;
+		}
+		else
+		{
+			transaction_queue.push(cur_trx);
+		}
+
+		iteration++;
+	}
+
+	return trx;
+}
+
 int dramcontroller::get_transaction_queue_size()
 {
 	count_ticks(tDRAM);
