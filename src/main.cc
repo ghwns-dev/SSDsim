@@ -101,6 +101,7 @@ int main(int argc, char* argv[]){
 
     while(!ftl->is_idle())
     {
+        // std::cout << "main loop\n";
         ftl->execute();
     }
 

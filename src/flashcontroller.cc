@@ -2,7 +2,7 @@
 
 flashcontroller::flashcontroller() 
 {
-
+	program_page_cnt = 0;
 }
 
 flashcontroller::~flashcontroller() 
@@ -82,7 +82,7 @@ unit_t flashcontroller::read_page(ppa_t i_ppa)
 
 ppa_t flashcontroller::find_free_page()
 {
-	// 2026/07/02 tREAD 불필요, DRAM에 저장해야될 메타데이터
+	// 2026/07/02 tREAD unnecessary, metadata
 	ppa_t ppa;
 	while(true)
 	{
@@ -104,8 +104,11 @@ ppa_t flashcontroller::find_free_page()
 			channel_busy[channel] += tREAD;
 
 			uint16_t page_status = nand[block_idx].pages[page].page_status;
-			if(page_status == FREE || page_status == INIT){
+			if(page_status == FREE || page_status == INIT)
+			{
 				ppa = block_idx * PAGE_PER_BLOCK + page;
+				update_page_status(ppa, VALID);
+				
 				return ppa;
 			}
 		}
@@ -302,20 +305,10 @@ void flashcontroller::set_free_block_ptr()
     free_block_ptr = &nand[selected];
 }
 
-/* program_page ticks management
-uint16_t ch = get_channel(block);
-
-channel_busy[ch] += tPROG;
-
-if(channel_busy[ch] > get_ticks())
-{
-    set_ticks(
-        channel_busy[ch]);
-}
-*/
-
 void flashcontroller::program_page(ppa_t i_ppa, unit_t i_data) 
 {    
+	program_page_cnt ++;
+
 	pba_t block = get_block_address(i_ppa);
     uint16_t page_idx = get_page_index(i_ppa);
 
@@ -329,7 +322,10 @@ void flashcontroller::program_page(ppa_t i_ppa, unit_t i_data)
 
 	channel_busy[channel] += tPROG;
 	
-	update_page_status(i_ppa, VALID);
+	// update_page_status(i_ppa, VALID);
+
+	// std::cout << "PROGRAM PPA : " << i_ppa << " status : " << nand[block].pages[page_idx].page_status << '\n';
+
     return;
 }
 
@@ -440,6 +436,8 @@ void flashcontroller::show_valid_flash_pages()
 
 	double erase_variation = get_erase_variation();
 	std::cout << "\nerase variation : " << erase_variation << "\n";
+
+	std::cout << "total program_page call : " << program_page_cnt << '\n';
    
 	return;
 }
