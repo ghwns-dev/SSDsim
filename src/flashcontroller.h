@@ -48,8 +48,6 @@ private:
 	// history_t *history_table;	
 
     uint64_t channel_busy[NUMBER_OF_CHANNEL];
-
-    uint64_t program_page_cnt;
 };
 
 typedef flashcontroller flashcontroller_t;

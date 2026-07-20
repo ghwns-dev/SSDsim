@@ -53,11 +53,6 @@ private:
 
 		uint64_t failed_command;
 		uint64_t succeed_command;
-
-        uint64_t program_trx_cnt;
-        uint64_t read_trx_cnt;
-        uint64_t erase_trx_cnt;
-        uint64_t program_page_cnt;
 };
 
 typedef ssdcontroller ssdcontroller_t;

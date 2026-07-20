@@ -2,7 +2,7 @@
 
 flashcontroller::flashcontroller() 
 {
-	program_page_cnt = 0;
+
 }
 
 flashcontroller::~flashcontroller() 
@@ -307,8 +307,6 @@ void flashcontroller::set_free_block_ptr()
 
 void flashcontroller::program_page(ppa_t i_ppa, unit_t i_data) 
 {    
-	program_page_cnt ++;
-
 	pba_t block = get_block_address(i_ppa);
     uint16_t page_idx = get_page_index(i_ppa);
 
@@ -436,8 +434,6 @@ void flashcontroller::show_valid_flash_pages()
 
 	double erase_variation = get_erase_variation();
 	std::cout << "\nerase variation : " << erase_variation << "\n";
-
-	std::cout << "total program_page call : " << program_page_cnt << '\n';
    
 	return;
 }

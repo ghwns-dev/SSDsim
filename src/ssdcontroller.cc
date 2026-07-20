@@ -5,10 +5,6 @@ ssdcontroller::ssdcontroller(int size)
     init_ticks();
     dram_controller = new dramcontroller(size);
     flash_controller = new flashcontroller();
-
-    program_trx_cnt = 0;
-    read_trx_cnt = 0;
-    erase_trx_cnt = 0;
 }
 
 ssdcontroller::~ssdcontroller() 
@@ -300,8 +296,8 @@ bool ssdcontroller::schedule_transaction()
 {
     while(!dram_controller->is_transaction_queue_empty())
     {
-        // transaction_t trx = select_transaction();
-        transaction_t trx = dram_controller->get_transaction();
+        transaction_t trx = select_transaction();
+        // transaction_t trx = dram_controller->get_transaction();
 
         if(trx.type == NAND_NONE) return false;
 
@@ -311,17 +307,14 @@ bool ssdcontroller::schedule_transaction()
         switch(trx.type)
         {
             case NAND_PROGRAM:
-                program_trx_cnt++;
                 flash_controller->program_page(trx.ppa, trx.data);
                 break;
 
             case NAND_READ:
-                read_trx_cnt++;
                 data = flash_controller->read_page(trx.ppa);
                 break;
 
             case NAND_ERASE:
-                erase_trx_cnt++;
                 flash_controller->erase_block(pba);
                 break;
         }
@@ -509,9 +502,6 @@ void ssdcontroller::show_execution_result()
     std::cout << "\nrequest accuracy : " << (static_cast<double>(succeed_command) / static_cast<double>(failed_command + succeed_command)) * 100.0 << "%";
     std::cout << "\n\ntotal cycles : " << flash_controller->get_total_cycles();
 
-    std::cout << "\n\nprogram transaction count : " << program_trx_cnt;
-    std::cout << "\nread transaction count : " << read_trx_cnt;
-    std::cout << "\nerase transaction count : " << erase_trx_cnt;
     std::cout << "\n\n";
 	
 	return;
