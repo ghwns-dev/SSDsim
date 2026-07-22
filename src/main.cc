@@ -24,7 +24,7 @@ void show_configuration(int i_workload_type)
 * SSDsim: Simulator for a simple SSD Architecture         *\n\
 * Developed by Hojun Kim                                  *\n\
 * EEE, Yonsei University                                  *\n\
-* Version: 2.0                                            *\n\
+* Version: 2.2                                            *\n\
 ***********************************************************\n\
 ";
 
