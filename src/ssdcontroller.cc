@@ -174,7 +174,7 @@ void ssdcontroller::garbage_collection()
         dram_controller->update_mapping_table(lpa,new_ppa,VALID);
 
         // flash_controller->update_page_status(new_ppa, VALID);
-        // write_to_nand(new_ppa, data);
+        write_to_nand(new_ppa, data);
         // push_program_transaction(new_ppa, data);
         // schedule_transaction();
     }
@@ -189,11 +189,7 @@ bool ssdcontroller::host_read(lpa_t i_lpa, unit_t *i_data_ptr)
         return false;
     }
 
-    // unit_t data = flash_controller->read_page(table_entry.PPA);
-    // std::memcpy(i_data_ptr, &data, sizeof(unit_t));
     push_read_transaction(table_entry.PPA);
-   
-    // std::cout << "host read, push_read_transaction PPA : " << table_entry.PPA << '\n';
    
     history_table[i_lpa].read_cnt++;
     
@@ -203,16 +199,12 @@ bool ssdcontroller::host_read(lpa_t i_lpa, unit_t *i_data_ptr)
 bool ssdcontroller::host_write(lpa_t i_lpa, unit_t i_data)
 {
 	history_table[i_lpa].program_cnt++;
-
-    // std::cout << "1. host write start\n";
 	
 	if(dram_controller->get_write_buffer_size() < dram_controller->get_max_write_buffer_size()) {
         // std::cout << "2-1. write to dram buffer\n";
 		write_to_buffer(i_lpa, i_data);
 		return true;
 	}
-
-    // std::cout << "2-2. dram buffer empty\n";
 
 	while(!dram_controller->is_write_buffer_empty()){
 		
@@ -224,37 +216,29 @@ bool ssdcontroller::host_write(lpa_t i_lpa, unit_t i_data)
 	
 		if(table_entry.page_status == INIT || table_entry.page_status == FREE){
 			ppa_t ppa = flash_controller->find_free_page();
-
-            // std::cout << "3. table entry page status is INIT or FREE\n";
 			
 			if(ppa == FAULT)
 			{
-                // std::cout << "3-1. find free page failed, garbage collection\n";
 				garbage_collection();       // foreground Garbage Collection
 
 				ppa = flash_controller->find_free_page();
 			
 				if(ppa == FAULT)
 				{
-                    // std::cout << "3-2. garbage collection failed, system shutdown\n";
 					std::cout << "SSD is full\n";
 					exit(-1);
 				}
 			}
 			
 			dram_controller->update_mapping_table(lpa, ppa, VALID);
-            // std::cout << "3-3. update mapping table\n";
 			
 			// write_to_nand(ppa, buffer_entry.data);	// segfault, ppa == 8192
             // flash_controller->update_page_status(ppa, VALID);
             push_program_transaction(ppa, buffer_entry.data);
-            // std::cout << "3-4. push program transaction\n";
-            // std::cout << "host write, push_program_transaction PPA : " << ppa << '\n';
 		}
 		else {	
 			// VALID or INVALID
 			// There is no case that table entry is set as FREE status
-            // std::cout << "4. table entry page status is VALID or INVALID\n";
 			ppa_t prev_ppa = table_entry.PPA;
 			
 			ppa_t ppa = flash_controller->find_free_page();
@@ -275,16 +259,12 @@ bool ssdcontroller::host_write(lpa_t i_lpa, unit_t i_data)
 			}	
             
 			dram_controller->update_mapping_table(lpa, ppa, VALID); 
-            // std::cout << "4-3. update mapping table\n";		
 			
             // write_to_nand(ppa, buffer_entry.data); 
             // flash_controller->update_page_status(ppa, VALID);
             push_program_transaction(ppa, buffer_entry.data);
-            // std::cout << "4-4. push program transaction\n";
-            // std::cout << "host write, push_program_transaction PPA : " << ppa << '\n';
 
 			if(table_entry.page_status == VALID) flash_controller->update_page_status(prev_ppa, INVALID);
-            // std::cout << "4-5. invalidate previous physical page\n";
 		}
 	}
     // std::cout << "host_write end\n";
@@ -357,11 +337,11 @@ transaction_t ssdcontroller::select_transaction()
             default:
             break;
         }
-        iteration_cnt++;
-        dram_controller->push_transaction_queue(trx_);
-    } 
 
-    iteration_cnt = 0;
+        iteration_cnt++;
+        
+        dram_controller->push_transaction_queue(trx_);
+    }
 
     if(read_table_size > 0)
     {

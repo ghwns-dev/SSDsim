@@ -312,17 +312,9 @@ void flashcontroller::program_page(ppa_t i_ppa, unit_t i_data)
 
     nand[block].pages[page_idx].data = i_data;
 
-    // count_ticks(tPROG);
-
 	channel_t channel = get_channel(block);
 
-	// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
-
 	channel_busy[channel] += tPROG;
-	
-	// update_page_status(i_ppa, VALID);
-
-	// std::cout << "PROGRAM PPA : " << i_ppa << " status : " << nand[block].pages[page_idx].page_status << '\n';
 
     return;
 }

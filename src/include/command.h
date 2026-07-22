@@ -1,5 +1,8 @@
 #include "defs.h"
 
+#ifndef __COMMAND__
+#define __COMMAND__
+
 // Cmd definition
 enum HOST_COMMAND_TYPE {
 	HOST_READ = 0,
@@ -13,3 +16,5 @@ typedef struct host_command {
 	lpa_t LPA;	
 	unit_t data;
 } host_command_t;
+
+#endif

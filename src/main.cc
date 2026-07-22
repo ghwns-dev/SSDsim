@@ -1,4 +1,5 @@
 #include "ssdcontroller.h"
+#include "include/workload_generator.h"
 
 #define BENCHMARK_RANDOM 0
 #define BENCHMARK_PROGRAM 1
@@ -16,7 +17,7 @@ int parse_argv(char* argv_[], int index){
     return ret;
 }
 
-void show_configuration()
+void show_configuration(int i_workload_type)
 {
     static std::string banner = "\
 ***********************************************************\n\
@@ -37,65 +38,69 @@ void show_configuration()
 	std::cout << "\n* number of pages per block : " << PAGE_PER_BLOCK;
 	std::cout << "\n* number of blocks per nand : " << BLOCK_PER_NAND;
 
-    return;
-}
-
-host_command_t generate_command(int i_benchmark)
-{
-    host_command_t command;
-
-    switch(i_benchmark)
+    switch(i_workload_type)
     {
-        case BENCHMARK_RANDOM:
-            command.type = static_cast<HOST_COMMAND_TYPE>(cmd_type_generator());
+        case WORKLOAD_TYPE::RANDOM:
+            std::cout << "\n\n* random workload";
             break;
-        case BENCHMARK_PROGRAM:
-            command.type = HOST_COMMAND_TYPE::HOST_WRITE;
+
+        case WORKLOAD_TYPE::INFERENCE:
+            std::cout << "\n\n* inference workload";
             break;
-        case BENCHMARK_READ:
-            command.type = HOST_COMMAND_TYPE::HOST_READ;
+
+        case WORKLOAD_TYPE::TRAINING:
+            std::cout << "\n\n* training workload";
             break;
+
+        case WORKLOAD_TYPE::BURST:
+            std::cout << "\n\n* burst workload";
+            break;
+
+        case WORKLOAD_TYPE::CHECKPOINT:
+            std::cout << "\n\n* checkpoint workload";
+            break;
+
         default:
             break;
     }
-   
-    command.LPA = logical_address_generator();
 
-	if(command.type == HOST_COMMAND_TYPE::HOST_WRITE) command.data = double_words_data_generator();
-
-    return command;
+    return;
 }
 
 #define DEFAULT_BUFFER_SIZE 32
 #define DEFAULT_ITERATION 8192
-
+#define DEFAULT_RANDOM_WORKLOAD 0
 
 int main(int argc, char* argv[]){
-   	 
-    show_configuration();
+    srand(42);
 
-    int benchmark;
+    int workload_type;
 	int max_data_buffer_size;
-    int iter_cnt;
+    int iteration_count;
 
     if(argc == 4) {
-        benchmark = parse_argv(argv, 1);
+        workload_type = parse_argv(argv, 1);
         max_data_buffer_size = parse_argv(argv, 2);
-        iter_cnt = parse_argv(argv, 3);
+        iteration_count = parse_argv(argv, 3);
     }
     else {
+        workload_type = DEFAULT_RANDOM_WORKLOAD;
         max_data_buffer_size = DEFAULT_BUFFER_SIZE;
-        iter_cnt = DEFAULT_ITERATION;
+        iteration_count = DEFAULT_ITERATION;
     }
+
+    show_configuration(workload_type);
 	
 	ssdcontroller_t *ftl = new ssdcontroller(max_data_buffer_size);
     ftl->initialize();
 
+    workload_generator_t _workload = workload_generator(WORKLOAD_TYPE(workload_type), iteration_count);
+
     // Simulator Start
     std::cout << "\n\n/*****SSDsim - simulation start*****/\n";
     
-	for(int i = 0; i < iter_cnt; i++) {
-        host_command_t cmd = generate_command(benchmark);
+	for(int i = 0; i < iteration_count; i++) {
+        host_command_t cmd = _workload.generate_command();
         ftl->push_command(cmd);
     }
 

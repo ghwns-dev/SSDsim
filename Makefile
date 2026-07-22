@@ -1,6 +1,7 @@
 # Compiler and flags
+# -fsanitize=address -g
 CXX := g++
-CXXFLAGS := -std=c++17 -Wall -I./src/include -D_LOG_
+CXXFLAGS := -std=c++17 -Wall -I./src/include -D_LOG_ 
 
 # Directories
 SRC_DIR := ./src
@@ -13,6 +14,7 @@ SRC_FILES := \
     $(SRC_DIR)/ssdcontroller.cc \
     $(SRC_DIR)/dramcontroller.cc \
     $(SRC_DIR)/flashcontroller.cc \
+    $(INCLUDE_DIR)/workload_generator.cc \
     $(INCLUDE_DIR)/defs.cc \
     $(INCLUDE_DIR)/random.cc
 

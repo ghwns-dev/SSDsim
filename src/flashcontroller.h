@@ -2,7 +2,8 @@
 #include "include/defs.h"
 #include <fstream>
 
-class flashcontroller {
+class flashcontroller 
+{
 public:
     flashcontroller();
     ~flashcontroller();

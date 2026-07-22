@@ -66,13 +66,15 @@ Build and execution procedure is as below.
 
 $make clean (optional)
 $make
-$./build/SSDsim -benchmark=0 -max_buffer_size=256 -iteration_cnt=262144 (recommended execution command)
+$./build/SSDsim -workload=0 -max_buffer_size=256 -iteration_cnt=262144 (recommended execution command)
 
 * Or you can simply execute the shell script file named 'run.sh'
-* Revision 2.0 enables new argv '-benchmark', which enables the workload of SSD.
-    0 : random requests (READ, PROGAM are executed in random sequences)
-    1 : dedicated to PROGRAM
-    2 : dedicated to READ
+* Revision 2.0 enables new argv '-workload', which enables the workload of SSD.
+    0 : random workload (READ, PROGAM are executed in random sequences)
+    1 : Inference workload 
+    2 : training workload
+    3 : burst workload
+    4 : checkpoint workload
 
 Execution with buffer size 256 and iteration count 262144 will fully utilize the 64KB Flash Memory (heuristic)
 And the case would show how garbage collection operates.
