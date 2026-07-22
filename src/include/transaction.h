@@ -12,12 +12,12 @@ struct transaction_t
 {
     TRANSACTION_TYPE type;
 
-    ppa_t ppa;
-
-    pba_t pba;
-
     unit_t data;
 
+    lpa_t lpa;
+    ppa_t ppa;
+    pba_t pba;
+    
     channel_t channel;
 
     uint64_t submit_tick;  // pushed time

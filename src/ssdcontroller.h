@@ -18,8 +18,8 @@ public:
         host_command_t get_command();
 		bool is_cmd_queue_empty();
 
-        void push_read_transaction(ppa_t);
-        void push_program_transaction(ppa_t, unit_t);
+        void push_read_transaction(lpa_t, ppa_t);
+        void push_program_transaction(lpa_t, ppa_t, unit_t);
         void push_erase_transaction(pba_t);
 
         table_entry_t get_mapping_table_entry(lpa_t);
@@ -27,7 +27,7 @@ public:
         bool is_idle();
 
         bool execute();
-        bool host_read(lpa_t, unit_t*);
+        bool host_read(lpa_t);
         bool host_write(lpa_t, unit_t);
 
         bool schedule_transaction();

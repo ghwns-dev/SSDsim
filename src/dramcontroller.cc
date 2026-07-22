@@ -222,6 +222,18 @@ unit_t dramcontroller::get_copy_data_buffer()
 	return data;
 }
 
+void dramcontroller::push_read_result_buffer(lpa_t i_lpa, unit_t i_data)
+{
+	buffer_entry_t buffer_entry;
+
+	buffer_entry.LPA = i_lpa;
+	buffer_entry.data = i_data;
+
+	read_result_buffer.push(buffer_entry);
+
+	return;
+}
+
 void dramcontroller::log_table_status()
 {
 	std::ofstream status_file("./log/table_status");

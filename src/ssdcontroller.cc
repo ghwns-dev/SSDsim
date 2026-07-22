@@ -68,11 +68,12 @@ bool ssdcontroller::is_idle()
         // && !scheduler.has_pending_transaction();
 }
 
-void ssdcontroller::push_read_transaction(ppa_t i_ppa)
+void ssdcontroller::push_read_transaction(lpa_t i_lpa, ppa_t i_ppa)
 {
     transaction_t trx;
     
     trx.type = NAND_READ;
+    trx.lpa = i_lpa;
     trx.ppa = i_ppa;
     trx.pba = flash_controller->get_block_address(i_ppa);
     trx.channel = flash_controller->get_channel(trx.pba);
@@ -83,11 +84,12 @@ void ssdcontroller::push_read_transaction(ppa_t i_ppa)
     return;
 }
 
-void ssdcontroller::push_program_transaction(ppa_t i_ppa, unit_t i_data)
+void ssdcontroller::push_program_transaction(lpa_t i_lpa, ppa_t i_ppa, unit_t i_data)
 {
     transaction_t trx;
     
     trx.type = NAND_PROGRAM;
+    trx.lpa = i_lpa;
     trx.ppa = i_ppa;
     trx.pba = flash_controller->get_block_address(i_ppa);
     trx.channel = flash_controller->get_channel(trx.pba);
@@ -180,16 +182,15 @@ void ssdcontroller::garbage_collection()
     }
 }
 
-bool ssdcontroller::host_read(lpa_t i_lpa, unit_t *i_data_ptr)
+bool ssdcontroller::host_read(lpa_t i_lpa)
 {
     table_entry_t table_entry = get_mapping_table_entry(i_lpa);
 
     if(table_entry.page_status != VALID){
-        std::memset(i_data_ptr, 0x00, sizeof(unit_t));
         return false;
     }
 
-    push_read_transaction(table_entry.PPA);
+    push_read_transaction(i_lpa, table_entry.PPA);
    
     history_table[i_lpa].read_cnt++;
     
@@ -200,8 +201,8 @@ bool ssdcontroller::host_write(lpa_t i_lpa, unit_t i_data)
 {
 	history_table[i_lpa].program_cnt++;
 	
-	if(dram_controller->get_write_buffer_size() < dram_controller->get_max_write_buffer_size()) {
-        // std::cout << "2-1. write to dram buffer\n";
+	if(dram_controller->get_write_buffer_size() < dram_controller->get_max_write_buffer_size()) 
+    {
 		write_to_buffer(i_lpa, i_data);
 		return true;
 	}
@@ -234,7 +235,7 @@ bool ssdcontroller::host_write(lpa_t i_lpa, unit_t i_data)
 			
 			// write_to_nand(ppa, buffer_entry.data);	// segfault, ppa == 8192
             // flash_controller->update_page_status(ppa, VALID);
-            push_program_transaction(ppa, buffer_entry.data);
+            push_program_transaction(lpa, ppa, buffer_entry.data);
 		}
 		else {	
 			// VALID or INVALID
@@ -245,15 +246,12 @@ bool ssdcontroller::host_write(lpa_t i_lpa, unit_t i_data)
 			
 			if(ppa == FAULT)
 			{
-                // std::cout << "4-1. find free page failed, garbage collection\n";
 				garbage_collection();
 
 				ppa = flash_controller->find_free_page();
 				// 2026/06/15
 				if(ppa == FAULT)
 				{
-                    // std::cout << "4-2. garbage collection failed, system shutdown\n";
-					// std::cout << "program failed\n";
 					exit(-1);
 				}
 			}	
@@ -262,12 +260,11 @@ bool ssdcontroller::host_write(lpa_t i_lpa, unit_t i_data)
 			
             // write_to_nand(ppa, buffer_entry.data); 
             // flash_controller->update_page_status(ppa, VALID);
-            push_program_transaction(ppa, buffer_entry.data);
+            push_program_transaction(lpa, ppa, buffer_entry.data);
 
 			if(table_entry.page_status == VALID) flash_controller->update_page_status(prev_ppa, INVALID);
 		}
 	}
-    // std::cout << "host_write end\n";
 
     return true;
 }
@@ -292,6 +289,7 @@ bool ssdcontroller::schedule_transaction()
 
             case NAND_READ:
                 data = flash_controller->read_page(trx.ppa);
+                if(data != NULL) dram_controller->push_read_result_buffer(trx.lpa, data);
                 break;
 
             case NAND_ERASE:
@@ -407,12 +405,10 @@ bool ssdcontroller::execute()
     {   
         host_command_t cmd = get_command(); 
 
-        unit_t data;
-
         switch(cmd.type)
         {
             case HOST_COMMAND_TYPE::HOST_READ:
-                valid = host_read(cmd.LPA, &data);
+                valid = host_read(cmd.LPA);
                 break;
 
             case HOST_COMMAND_TYPE::HOST_WRITE:

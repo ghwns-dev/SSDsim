@@ -38,6 +38,8 @@ public:
     void push_copy_data_buffer(unit_t);
     unit_t get_copy_data_buffer();
 
+    void push_read_result_buffer(lpa_t, unit_t);
+
     void log_table_status();
 
 private:
@@ -45,6 +47,7 @@ private:
     std::queue<transaction_t> transaction_queue;
 
     std::queue<buffer_entry_t> write_buffer;
+    std::queue<buffer_entry_t> read_result_buffer;
     std::queue<unit_t> copy_data_buffer;
 
     table_entry_t *mapping_table;

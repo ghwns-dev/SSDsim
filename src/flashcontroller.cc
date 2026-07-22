@@ -69,11 +69,7 @@ unit_t flashcontroller::read_page(ppa_t i_ppa)
 
     unit_t data = nand[block].pages[page_idx].data;
 
-    // count_ticks(tREAD);
-
 	channel_t channel = get_channel(block);
-
-	// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
 
 	channel_busy[channel] += tREAD;
 	
