@@ -195,43 +195,72 @@ buffer_entry_t dramcontroller::get_front_buffer_entry()
 	return buffer_entry;
 }
 
-bool dramcontroller::is_copy_data_buffer_empty()
+bool dramcontroller::is_gc_buffer_empty()
 {
 	count_ticks(tDRAM);
 	
-	return copy_data_buffer.empty();
+	return gc_buffer.empty();
 }
 
-void dramcontroller::push_copy_data_buffer(unit_t i_data)
+void dramcontroller::push_gc_buffer(lpa_t i_lpa,  pba_t i_old_pba, unit_t i_data)
 {
 	count_ticks(tDRAM);
-    copy_data_buffer.push(i_data);
+
+	garbage_collection_buffer_entry_t gc_buffer_entry;
+
+	gc_buffer_entry.LPA = i_lpa;
+	gc_buffer_entry.old_pba = i_old_pba;
+	gc_buffer_entry.data = i_data;
+
+    gc_buffer.push(gc_buffer_entry);
     
 	return;
 }
 
-unit_t dramcontroller::get_copy_data_buffer()
+garbage_collection_buffer_entry_t dramcontroller::get_gc_buffer_entry()
 {
-	if(copy_data_buffer.empty()) return NULL;
+	if(is_gc_buffer_empty()) return { FAULT, 0 };
     
 	count_ticks(tDRAM);
+
+	garbage_collection_buffer_entry_t gc_buffer_entry = gc_buffer.front();
+	gc_buffer.pop();
     
-	unit_t data = copy_data_buffer.front();
-	copy_data_buffer.pop();
-    
-	return data;
+	return gc_buffer_entry;
+}
+
+bool dramcontroller::is_read_result_buffer_empty()
+{
+	count_ticks(tDRAM);
+	
+	return read_result_buffer.empty();
 }
 
 void dramcontroller::push_read_result_buffer(lpa_t i_lpa, unit_t i_data)
 {
+	count_ticks(tDRAM);
+	
 	buffer_entry_t buffer_entry;
 
 	buffer_entry.LPA = i_lpa;
+
 	buffer_entry.data = i_data;
 
 	read_result_buffer.push(buffer_entry);
 
 	return;
+}
+
+buffer_entry_t dramcontroller::get_read_result_buffer()
+{
+	if(is_read_result_buffer_empty()) return { FAULT, 0 };
+    
+	count_ticks(tDRAM);
+
+	buffer_entry_t buffer_entry = read_result_buffer.front();
+	read_result_buffer.pop();
+    
+	return buffer_entry;
 }
 
 void dramcontroller::log_table_status()

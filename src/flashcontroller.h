@@ -17,7 +17,7 @@ public:
     ppa_t find_free_page();
     void update_page_status(ppa_t, uint16_t);
 
-    unit_t read_page(ppa_t);
+    bool read_page(ppa_t, unit_t*);
     void program_page(ppa_t, unit_t);
     void erase_block(pba_t);
 

@@ -52,12 +52,14 @@ typedef uint16_t channel_t;
 typedef uint64_t unit_t;	// 8B for for Page Data
 
 // Physical Entity
-typedef struct page {
+typedef struct page 
+{
 	unit_t data;	// 256 items
 	uint16_t page_status;
 } page_t;
 
-typedef struct block {
+typedef struct block 
+{
 	page_t *pages;	// 32 items
 	pba_t pba;
 
@@ -67,30 +69,60 @@ typedef struct block {
 	uint64_t erased_count;
 } block_t;
 
-pba_t GetPhysicalBlockAddress(ppa_t);
-// Physical Done
-
-enum PAGE_STATUS {
+enum PAGE_STATUS 
+{
 	INIT = 0,
 	FREE,
 	VALID,
 	INVALID,
+	RESERVED
 };
 
-typedef struct table_entry {
+typedef struct table_entry 
+{
 	ppa_t PPA;
 	uint16_t page_status;
 } table_entry_t;
 
-typedef struct buffer_entry {
+typedef struct buffer_entry
+{
 	lpa_t LPA;
 	unit_t data;
 } buffer_entry_t;
 
-typedef struct history {
+typedef struct garbage_collection_buffer_entry 
+{
+	lpa_t LPA;
+	unit_t data;
+	pba_t old_pba;
+} garbage_collection_buffer_entry_t;
+
+typedef struct history
+{
         uint64_t read_cnt;
         uint64_t program_cnt;
 } history_t;
+
+typedef struct garbage_collection_context
+{
+    bool running;
+
+    pba_t victim_block;
+
+    int pending_read;
+    int pending_program;
+
+    bool erase_issued;
+
+	void reset()
+	{
+		running = false;
+		victim_block = FAULT;
+		pending_read = 0;
+		pending_program = 0;
+		erase_issued = false;
+	};
+} garbage_collection_context_t;
 
 // Timer
 extern uint64_t *ticks;	// Global Timer

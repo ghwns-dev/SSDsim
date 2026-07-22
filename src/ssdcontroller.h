@@ -18,8 +18,8 @@ public:
         host_command_t get_command();
 		bool is_cmd_queue_empty();
 
-        void push_read_transaction(lpa_t, ppa_t);
-        void push_program_transaction(lpa_t, ppa_t, unit_t);
+        void push_read_transaction(transaction_t);
+        void push_program_transaction(transaction_t);
         void push_erase_transaction(pba_t);
 
         table_entry_t get_mapping_table_entry(lpa_t);
@@ -37,6 +37,8 @@ public:
         bool garbage_collection_triggered();
         void garbage_collection();
 
+        void check_garbage_collection_finish();
+
         void write_to_buffer(lpa_t, unit_t);
         void write_to_nand(ppa_t, unit_t);
 
@@ -53,6 +55,8 @@ private:
 
 		uint64_t failed_command;
 		uint64_t succeed_command;
+
+        garbage_collection_context_t gc_context;
 };
 
 typedef ssdcontroller ssdcontroller_t;

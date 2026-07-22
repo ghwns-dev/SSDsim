@@ -34,11 +34,13 @@ public:
 
 	lpa_t get_lpa_from_mapping_table(ppa_t);
 
-	bool is_copy_data_buffer_empty();
-    void push_copy_data_buffer(unit_t);
-    unit_t get_copy_data_buffer();
+	bool is_gc_buffer_empty();
+    void push_gc_buffer(lpa_t, pba_t, unit_t);
+    garbage_collection_buffer_entry_t get_gc_buffer_entry();
 
+    bool is_read_result_buffer_empty();
     void push_read_result_buffer(lpa_t, unit_t);
+    buffer_entry_t get_read_result_buffer();
 
     void log_table_status();
 
@@ -48,7 +50,7 @@ private:
 
     std::queue<buffer_entry_t> write_buffer;
     std::queue<buffer_entry_t> read_result_buffer;
-    std::queue<unit_t> copy_data_buffer;
+    std::queue<garbage_collection_buffer_entry_t> gc_buffer;
 
     table_entry_t *mapping_table;
 

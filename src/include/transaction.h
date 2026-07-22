@@ -17,8 +17,12 @@ struct transaction_t
     lpa_t lpa;
     ppa_t ppa;
     pba_t pba;
+
+    ppa_t old_ppa;
     
     channel_t channel;
 
     uint64_t submit_tick;  // pushed time
+
+    bool is_gc_transaction;
 };

@@ -60,20 +60,22 @@ channel_t flashcontroller::get_channel(pba_t i_pba)
 	return i_pba % NUMBER_OF_CHANNEL;	
 }
 
-unit_t flashcontroller::read_page(ppa_t i_ppa) 
+bool flashcontroller::read_page(ppa_t i_ppa, unit_t *i_data) 
 {
     pba_t block = get_block_address(i_ppa);
     ppa_t page_idx = get_page_index(i_ppa);
 
-    if (nand[block].pages[page_idx].page_status != VALID) return NULL;
+    if (nand[block].pages[page_idx].page_status != VALID) return false;
 
     unit_t data = nand[block].pages[page_idx].data;
+
+	memcpy(i_data, &data, sizeof(unit_t));
 
 	channel_t channel = get_channel(block);
 
 	channel_busy[channel] += tREAD;
 	
-    return data;
+    return true;
 }
 
 ppa_t flashcontroller::find_free_page()
