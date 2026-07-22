@@ -1,4 +1,4 @@
-# SSDsim: An Educational SSD Simulator for AI Workload Analysis
+# SSDsim: A Simple SSD Simulator for AI Workload Analysis
 
 ## Overview
 
