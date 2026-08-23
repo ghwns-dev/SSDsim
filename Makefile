@@ -30,13 +30,11 @@ all: $(TARGET)
 # Link object files to create the binary
 $(TARGET): $(OBJ_FILES) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJ_FILES)
+	rm -f $(OBJ_FILES)
 
 # Compile source files to object files
 %.o: %.cc
 	$(CXX) -g $(CXXFLAGS) -c $< -o $@
-
-$(SRC_DIR):
-	rm -rf $(OBJ_FILES)
 
 # Ensure build directory exists
 $(BUILD_DIR):
