@@ -1,53 +1,134 @@
 #include "workload_generator.h"
+#include <fstream>
+#include <sstream>
+#include <climits>
 
-workload_generator::workload_generator(WORKLOAD_TYPE i_type, int i_cmd_cnt) 
+// [FIX 2026/08/23] WORKLOAD_TYPE now selects a trace file (see
+// resolve_trace_path()) instead of seeding a synthetic pattern -- the
+// signature and every existing call site (main.cc's -workload=/-iteration=
+// parsing) are unchanged.
+workload_generator::workload_generator(WORKLOAD_TYPE i_type, int i_cmd_cnt)
 {
     workload_type = i_type;
-    total_command_count = i_cmd_cnt;
     current_command_count = 0;
 
-    sequential_address = logical_address_generator();
+    // vestigial -- only the now-unused synthetic *_workload() functions
+    // read these; initialized so nothing is left undefined.
+    sequential_address = 0;
     training_read_address = 0;
     training_write_address = MAX_LOGICAL_ADDRESS / 2;
-    checkpoint_address = logical_address_generator();
-
+    checkpoint_address = 0;
     checkpoint_mode = false;
     checkpoint_remaining = 0;
+
+    trace_cursor = 0;
+    load_trace(resolve_trace_path(i_type));
+
+    // [FIX 2026/08/23] i_cmd_cnt (originally -iteration=, "how many
+    // synthetic commands to generate") now caps how many of the trace's
+    // entries actually get used, taken in trace order -- it can never
+    // exceed what the file actually has.
+    int trace_size = static_cast<int>(trace_entries.size());
+    total_command_count = std::min(i_cmd_cnt, trace_size);
+
+    if(i_cmd_cnt > trace_size)
+    {
+        std::cout << "\n[workload_generator] warning: -iteration=" << i_cmd_cnt
+                   << " exceeds trace length (" << trace_size
+                   << "); using " << total_command_count << " entries instead.\n";
+    }
 }
 
-workload_generator::~workload_generator() 
+// [FIX 2026/08/23] Maps a WORKLOAD_TYPE to its trace file. All five
+// workload types are driven by a matching offline-generated trace file
+// under SSDsim_wsl/trace/ (tick,R/W,lpa -- see the trace-file generation
+// discussion) instead of the synthetic *_workload() generators further
+// below, which are kept only for reference.
+std::string workload_generator::resolve_trace_path(WORKLOAD_TYPE i_type)
+{
+    switch(i_type)
+    {
+        case WORKLOAD_TYPE::RANDOM:     return "trace/random.trace";
+        case WORKLOAD_TYPE::INFERENCE:  return "trace/inference.trace";
+        case WORKLOAD_TYPE::TRAINING:   return "trace/training.trace";
+        case WORKLOAD_TYPE::BURST:      return "trace/burst.trace";
+        case WORKLOAD_TYPE::CHECKPOINT: return "trace/checkpoint.trace";
+        default:                        return "";
+    }
+}
+
+workload_generator::~workload_generator()
 {
 
 }
 
+// [FIX 2026/08/23] Parses "tick,R/W,lpa" lines into trace_entries. Write
+// commands get a random data payload synthesized here -- the trace format
+// intentionally doesn't carry payload data (SSDsim never reads it back for
+// correctness, only stores it in page_t::data), matching how the synthetic
+// *_workload() functions already fill write data via
+// double_words_data_generator().
+void workload_generator::load_trace(std::string i_trace_path)
+{
+    std::ifstream trace_file(i_trace_path);
+
+    if(!trace_file.is_open())
+    {
+        std::cout << "\nfailed to open trace file: " << i_trace_path << "\n";
+        exit(-1);
+    }
+
+    std::string line;
+
+    while(std::getline(trace_file, line))
+    {
+        if(line.empty()) continue;
+
+        std::stringstream ss(line);
+        std::string tick_str, rw_str, lpa_str;
+
+        std::getline(ss, tick_str, ',');
+        std::getline(ss, rw_str, ',');
+        std::getline(ss, lpa_str, ',');
+
+        trace_entry_t entry;
+        entry.tick = std::stoull(tick_str);
+        entry.cmd.type = (rw_str == "R") ? HOST_READ : HOST_WRITE;
+        entry.cmd.LPA = static_cast<lpa_t>(std::stoul(lpa_str));
+
+        if(entry.cmd.type == HOST_WRITE) entry.cmd.data = double_words_data_generator();
+
+        trace_entries.push_back(entry);
+    }
+
+    trace_file.close();
+
+    if(trace_entries.empty())
+    {
+        std::cout << "\ntrace file has no entries: " << i_trace_path << "\n";
+        exit(-1);
+    }
+}
+
+// [FIX 2026/08/23] Every WORKLOAD_TYPE is trace-driven now -- the switch is
+// kept (rather than calling trace_workload() unconditionally) so it stays
+// obvious at a glance which types are actually supported.
 host_command_t workload_generator::generate_command()
 {
     host_command_t command;
 
-    switch(workload_type) 
+    switch(workload_type)
     {
         case WORKLOAD_TYPE::RANDOM:
-            command = random_workload();
-            break;
-
         case WORKLOAD_TYPE::INFERENCE:
-            command = inference_workload();
-            break;
-
         case WORKLOAD_TYPE::TRAINING:
-            command = training_workload();
-            break;
-
         case WORKLOAD_TYPE::BURST:
-            command = burst_workload();
-            break;
-
         case WORKLOAD_TYPE::CHECKPOINT:
-            command = checkpoint_workload();
+            command = trace_workload();
             break;
 
         default:
-            break; 
+            break;
     }
 
     current_command_count++;
@@ -169,4 +250,46 @@ host_command_t workload_generator::checkpoint_workload()
     command = training_workload();
 
     return command;
+}
+
+// [FIX 2026/08/23] Returns the next trace entry's command in order and
+// advances the cursor. Like the other *_workload() functions, this doesn't
+// guard against being called past the end of its data -- callers must check
+// is_finished() first.
+host_command_t workload_generator::trace_workload()
+{
+    host_command_t command = trace_entries[trace_cursor].cmd;
+    trace_cursor++;
+
+    return command;
+}
+
+// [FIX 2026/08/23] Arrival tick of the next not-yet-generated command.
+// main.cc uses this to decide whether it's time to push the next command
+// yet, instead of pushing the whole workload up front (which is what made
+// every run fully saturated from tick 0, regardless of scheduling policy --
+// see the FCFS vs Read-First discussion). Once the trace is exhausted,
+// returns ULLONG_MAX so a caller that (incorrectly) checks this before
+// is_finished() never treats "no more entries" as "ready now".
+uint64_t workload_generator::get_next_arrival_tick()
+{
+    if(trace_cursor >= static_cast<int>(trace_entries.size())) return ULLONG_MAX;
+
+    return trace_entries[trace_cursor].tick;
+}
+
+// [FIX 2026/08/23] True once total_command_count commands have been
+// generated (mirrors the current_command_count bookkeeping generate_command()
+// already does for every workload type).
+bool workload_generator::is_finished()
+{
+    return current_command_count >= total_command_count;
+}
+
+// [FIX 2026/08/23] For TRACE mode this is the number of lines actually
+// parsed from the trace file (not a caller-supplied guess), so main.cc can
+// drive its loop bound off the real trace length.
+int workload_generator::get_total_command_count()
+{
+    return total_command_count;
 }

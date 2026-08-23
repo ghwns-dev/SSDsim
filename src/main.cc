@@ -88,12 +88,12 @@ void show_configuration(WORKLOAD_TYPE i_workload_type, SCHEDULING_POLICY i_sched
 
 int main(int argc, char* argv[]){
     srand(42);
-
+ 
     WORKLOAD_TYPE workload_type;
 	int max_data_buffer_size;
     int iteration_count;
     SCHEDULING_POLICY scheduling_policy;
-
+ 
     if(argc == 5) {
         workload_type = static_cast<WORKLOAD_TYPE>(parse_argv(argv, 1));
         max_data_buffer_size = parse_argv(argv, 2);
@@ -106,33 +106,68 @@ int main(int argc, char* argv[]){
         iteration_count = DEFAULT_ITERATION;
         scheduling_policy = static_cast<SCHEDULING_POLICY>(DEFAULT_SCHEDULING_POLICY_FCFS);
     }
-
+ 
     show_configuration(workload_type, scheduling_policy);
-	
+ 
+    // [FIX 2026/08/23] workload_generator_t is now heap-allocated behind a
+    // pointer instead of a stack object -- no functional reason once this
+    // was just one constructor call again, but ~workload_generator() is
+    // trivial and this keeps the explicit delete symmetric with ftl below.
+    workload_generator_t *_workload = new workload_generator_t(workload_type, iteration_count);
+ 
+    // [FIX 2026/08/23] WORKLOAD_TYPE now resolves to a trace file inside
+    // workload_generator (see resolve_trace_path()) instead of a synthetic
+    // pattern -- -workload=/-iteration= parsing above is unchanged.
+    std::cout << "\n* trace entries loaded : " << _workload->get_total_command_count() << "\n";
+ 
 	ssdcontroller_t *ftl = new ssdcontroller(max_data_buffer_size, scheduling_policy);
     ftl->initialize();
-
-    workload_generator_t _workload = workload_generator(WORKLOAD_TYPE(workload_type), iteration_count);
-
+ 
     // Simulator Start
     std::cout << "\n\n/*****SSDsim - simulation start*****/\n";
-    
-	for(int i = 0; i < iteration_count; i++) {
-        host_command_t cmd = _workload.generate_command();
-        ftl->push_command(cmd);
-    }
-
-    while(!ftl->is_idle())
+ 
+    // [FIX 2026/08/23] Previously the entire workload was pushed into the
+    // command queue before the simulation loop even started (a plain
+    // for-loop over iteration_count), so every run was fully backlogged
+    // from tick 0 and total_cycles ended up dominated by raw throughput
+    // rather than scheduling order (see the FCFS vs Read-First discussion).
+    // Now that every WORKLOAD_TYPE is trace-driven (see
+    // workload_generator::resolve_trace_path()), a command is only pushed
+    // once its recorded arrival tick has actually been reached, so the
+    // request-arrival pattern recorded in the trace is what actually paces
+    // the simulation instead of everything landing at tick 0.
+    while(!_workload->is_finished() || !ftl->is_idle())
     {
-        // std::cout << "main loop\n";
+        while(!_workload->is_finished() && _workload->get_next_arrival_tick() <= get_ticks()) {
+            host_command_t cmd = _workload->generate_command();
+            ftl->push_command(cmd);
+        }
+ 
+        // [FIX 2026/08/23] get_ticks() only advances as a side effect of
+        // actually processing a command/transaction -- there's no free-
+        // running clock. If the FTL has drained everything it currently has
+        // but the workload isn't finished, nothing will ever make
+        // get_ticks() reach the next arrival on its own, so the simulated
+        // clock has to be fast-forwarded explicitly to that next arrival
+        // (this models the SSD sitting idle, powered on, waiting for the
+        // next request). channel_busy[] values aren't touched by this --
+        // they're absolute future ticks already recorded, and
+        // max(get_ticks(), channel_busy[channel]) stays correct however far
+        // get_ticks() jumps.
+        if(ftl->is_idle() && !_workload->is_finished()) {
+            uint64_t next_tick = _workload->get_next_arrival_tick();
+            if(next_tick > get_ticks()) count_ticks(next_tick - get_ticks());
+            continue;
+        }
+ 
         ftl->execute();
     }
-
+ 
     std::cout << "\n/*****SSDsim - simulation done******/\n";
-
+ 
     ftl->show_stats();
-
+ 
     delete ftl;
+    delete _workload;
     return 0;
 }
-
