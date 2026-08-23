@@ -92,6 +92,12 @@ typedef struct history {
         uint64_t program_cnt;
 } history_t;
 
+enum SCHEDULING_POLICY
+{
+    FCFS = 0,
+    READ_FIRST
+};
+
 // Timer
 extern uint64_t *ticks;	// Global Timer
 

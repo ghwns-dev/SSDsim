@@ -17,10 +17,10 @@ public:
     int get_command_queue_size();
 	bool is_cmd_queue_empty();
 
-    void push_transaction_queue(transaction_t);
-    transaction_t get_transaction();
-    transaction_t get_transaction_with_parameter(transaction_t*);
-    int get_transaction_queue_size();
+    void push_transaction_queue(transaction_t, bool i_is_scheduling);
+    transaction_t get_transaction(bool i_is_scheduling);
+    transaction_t get_transaction_with_parameter(transaction_t*, bool i_is_scheduling);
+    int get_transaction_queue_size(bool i_is_scheduling);
     bool is_transaction_queue_empty();
 
     void update_mapping_table(lpa_t, ppa_t, uint16_t);

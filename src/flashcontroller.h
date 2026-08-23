@@ -37,6 +37,11 @@ public:
     uint64_t get_total_erase_count();
     uint64_t get_total_cycles();
 
+    // [FIX 2026/08/23] Lets callers (e.g. ssdcontroller::schedule_transaction)
+    // read a channel's current busy time right after an op, which is exactly
+    // that op's completion tick -- used for per-request latency tracking.
+    uint64_t get_channel_busy(channel_t);
+
 	void show_valid_flash_pages();
 	void log_flash_status();
 	void log_gc(int);

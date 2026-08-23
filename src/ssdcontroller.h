@@ -7,7 +7,7 @@
 
 class ssdcontroller {
 public:
-        ssdcontroller(int);
+        ssdcontroller(int, SCHEDULING_POLICY);
         ~ssdcontroller();
 
         /***v1.3 Revision***/
@@ -53,7 +53,21 @@ private:
 
 		uint64_t failed_command;
 		uint64_t succeed_command;
+
+		// [FIX 2026/08/23] Per-request latency stats (queue wait + NAND op
+		// time = completion_tick - submit_tick). total_cycles is a
+		// per-channel sum and is structurally blind to processing order,
+		// so this is what actually reveals FCFS vs Read-First scheduling
+		// differences.
+		uint64_t total_read_latency;
+		uint64_t read_latency_count;
+		uint64_t max_read_latency;
+
+		uint64_t total_program_latency;
+		uint64_t program_latency_count;
+		uint64_t max_program_latency;
+
+        SCHEDULING_POLICY m_scheduling_policy;
 };
 
 typedef ssdcontroller ssdcontroller_t;
-

@@ -1,10 +1,12 @@
 #include "ssdcontroller.h"
 
-ssdcontroller::ssdcontroller(int size) 
+ssdcontroller::ssdcontroller(int size, SCHEDULING_POLICY i_policy) 
 {
     init_ticks();
     dram_controller = new dramcontroller(size);
     flash_controller = new flashcontroller();
+
+    m_scheduling_policy = i_policy;
 }
 
 ssdcontroller::~ssdcontroller() 
@@ -28,8 +30,27 @@ void ssdcontroller::initialize()
         history_table[lpa].program_cnt = 0;
     }
 
-	uint64_t failed_command = 0;
-	uint64_t succeed_command = 0;
+	// [FIX 2026/08/23] These used to be declared as new local variables here
+	// ("uint64_t failed_command = 0;"), which shadowed the actual class
+	// members of the same name declared in ssdcontroller.h. That local copy
+	// got zeroed and then immediately discarded when initialize() returned,
+	// while the real this->failed_command / this->succeed_command (used
+	// everywhere else, e.g. in execute() and show_execution_result()) were
+	// left holding whatever garbage bytes were on the heap when this object
+	// was allocated -- producing nonsense totals like "succeed request :
+	// 13744632839234819092" and "request accuracy : 152%". Dropping the
+	// "uint64_t" type makes these assignments target the member fields.
+	failed_command = 0;
+	succeed_command = 0;
+
+    // [FIX 2026/08/23] latency-stat accumulators for FCFS vs Read-First comparison
+    total_read_latency = 0;
+    read_latency_count = 0;
+    max_read_latency = 0;
+
+    total_program_latency = 0;
+    program_latency_count = 0;
+    max_program_latency = 0;
 
     return;
 }
@@ -78,7 +99,7 @@ void ssdcontroller::push_read_transaction(ppa_t i_ppa)
     trx.channel = flash_controller->get_channel(trx.pba);
     trx.submit_tick = get_ticks();
 
-    dram_controller->push_transaction_queue(trx);
+    dram_controller->push_transaction_queue(trx, false);
 
     return;
 }
@@ -94,7 +115,7 @@ void ssdcontroller::push_program_transaction(ppa_t i_ppa, unit_t i_data)
     trx.data = i_data;
     trx.submit_tick = get_ticks();
 
-    dram_controller->push_transaction_queue(trx);
+    dram_controller->push_transaction_queue(trx, false);
 
     return;
 }
@@ -108,7 +129,7 @@ void ssdcontroller::push_erase_transaction(pba_t i_pba)
     trx.channel = flash_controller->get_channel(trx.pba);
     trx.submit_tick = get_ticks();
 
-    dram_controller->push_transaction_queue(trx);
+    dram_controller->push_transaction_queue(trx, false);
 
     return;
 }
@@ -206,9 +227,21 @@ bool ssdcontroller::host_write(lpa_t i_lpa, unit_t i_data)
 		return true;
 	}
 
-	while(!dram_controller->is_write_buffer_empty()){
-		
+	// [FIX 2026/08/23] A real SSD DRAM write cache doesn't sit idle until it's
+	// completely full and then dump everything at once — it stays full and
+	// destages (evicts) one entry to NAND for every new write that comes in
+	// once it's at capacity. Changed from `while` (drain the whole buffer in
+	// one burst) to `if` (evict exactly one entry per call), and the new
+	// incoming write takes the evicted entry's place in the buffer instead
+	// of being silently dropped. This also lets writes actually interleave
+	// with reads in the transaction queue instead of only ever arriving as
+	// one giant same-type burst that read-priority scheduling can't reorder
+	// against (see the FCFS vs Read-First debugging discussion).
+	if(!dram_controller->is_write_buffer_empty())
+	{
 		buffer_entry_t buffer_entry = dram_controller->get_front_buffer_entry();
+
+		write_to_buffer(i_lpa, i_data);
 
 		table_entry_t table_entry = dram_controller->get_mapping_table_entry(buffer_entry.LPA);
 
@@ -276,8 +309,22 @@ bool ssdcontroller::schedule_transaction()
 {
     while(!dram_controller->is_transaction_queue_empty())
     {
-        transaction_t trx = select_transaction();
-        // transaction_t trx = dram_controller->get_transaction();
+        transaction_t trx;
+
+        switch(m_scheduling_policy)
+        {
+            case SCHEDULING_POLICY::FCFS:
+                trx = dram_controller->get_transaction(false);
+                break;
+
+            case SCHEDULING_POLICY::READ_FIRST:
+                trx = select_transaction();
+                break;
+
+            default:
+                trx = dram_controller->get_transaction(false);
+                break;
+        }
 
         if(trx.type == NAND_NONE) return false;
 
@@ -287,12 +334,40 @@ bool ssdcontroller::schedule_transaction()
         switch(trx.type)
         {
             case NAND_PROGRAM:
+            {
                 flash_controller->program_page(trx.ppa, trx.data);
+
+                // [FIX 2026/08/23] Per-request latency = completion_tick -
+                // submit_tick. get_channel_busy(trx.channel) right after the
+                // op call is exactly that op's completion tick, since
+                // program_page() just set channel_busy[trx.channel] to
+                // start_tick + tPROG. This is the metric that should differ
+                // between FCFS and Read-First now that reads/programs can
+                // actually interleave in the same batch.
+                uint64_t completion_tick = flash_controller->get_channel_busy(trx.channel);
+                uint64_t latency = completion_tick - trx.submit_tick;
+                total_program_latency += latency;
+                program_latency_count++;
+                if(latency > max_program_latency) max_program_latency = latency;
                 break;
+            }
 
             case NAND_READ:
+            {
                 data = flash_controller->read_page(trx.ppa);
+
+                // [FIX 2026/08/23] see NAND_PROGRAM case above. read_page()
+                // now charges tREAD (and updates channel_busy) even for a
+                // stale/invalidated page, so this stays correct for every
+                // dispatched READ, not just the ones still valid at service
+                // time.
+                uint64_t completion_tick = flash_controller->get_channel_busy(trx.channel);
+                uint64_t latency = completion_tick - trx.submit_tick;
+                total_read_latency += latency;
+                read_latency_count++;
+                if(latency > max_read_latency) max_read_latency = latency;
                 break;
+            }
 
             case NAND_ERASE:
                 flash_controller->erase_block(pba);
@@ -307,7 +382,7 @@ transaction_t ssdcontroller::select_transaction()
 {
     transaction_t trx;
 
-    int transaction_queue_size = dram_controller->get_transaction_queue_size();
+    int transaction_queue_size = dram_controller->get_transaction_queue_size(true);
 
     int iteration_cnt = 0;
 
@@ -321,7 +396,7 @@ transaction_t ssdcontroller::select_transaction()
 
     while(iteration_cnt < transaction_queue_size)
     {
-        transaction_t trx_ = dram_controller->get_transaction();
+        transaction_t trx_ = dram_controller->get_transaction(true);
 
         switch(trx_.type)
         {
@@ -340,7 +415,7 @@ transaction_t ssdcontroller::select_transaction()
 
         iteration_cnt++;
         
-        dram_controller->push_transaction_queue(trx_);
+        dram_controller->push_transaction_queue(trx_, true);
     }
 
     if(read_table_size > 0)
@@ -379,7 +454,7 @@ transaction_t ssdcontroller::find_least_recent_transaction(transaction_t *i_tabl
         }
     }
 
-    trx = dram_controller->get_transaction_with_parameter(&i_table[least_submit_transaction_index]);
+    trx = dram_controller->get_transaction_with_parameter(&i_table[least_submit_transaction_index], false);
 
     return trx;
 }
@@ -423,7 +498,7 @@ bool ssdcontroller::execute()
                 break;
         }
 
-        if(dram_controller->get_transaction_queue_size() >= TRANSACTION_FLUSH_TH)
+        if(dram_controller->get_transaction_queue_size(false) >= TRANSACTION_FLUSH_TH)
         {
             schedule_transaction();
         }
@@ -482,6 +557,19 @@ void ssdcontroller::show_execution_result()
     std::cout << "\nrequest accuracy : " << (static_cast<double>(succeed_command) / static_cast<double>(failed_command + succeed_command)) * 100.0 << "%";
     std::cout << "\n\ntotal cycles : " << flash_controller->get_total_cycles();
 
+    // [FIX 2026/08/23] total_cycles (a per-channel sum) is structurally
+    // insensitive to processing order — see the FCFS vs Read-First
+    // debugging discussion. These latency stats are what should actually
+    // move between scheduling policies.
+    if(read_latency_count > 0){
+        std::cout << "\n\naverage read latency : " << (static_cast<double>(total_read_latency) / static_cast<double>(read_latency_count)) << " ns";
+        std::cout << "\nmax read latency : " << max_read_latency << " ns";
+    }
+    if(program_latency_count > 0){
+        std::cout << "\naverage program latency : " << (static_cast<double>(total_program_latency) / static_cast<double>(program_latency_count)) << " ns";
+        std::cout << "\nmax program latency : " << max_program_latency << " ns";
+    }
+
     std::cout << "\n\n";
 	
 	return;
@@ -497,4 +585,3 @@ void ssdcontroller::show_stats()
 	show_execution_result();
     return;
 }
-

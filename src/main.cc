@@ -17,7 +17,7 @@ int parse_argv(char* argv_[], int index){
     return ret;
 }
 
-void show_configuration(int i_workload_type)
+void show_configuration(WORKLOAD_TYPE i_workload_type, SCHEDULING_POLICY i_scheduling_policy)
 {
     static std::string banner = "\
 ***********************************************************\n\
@@ -41,23 +41,37 @@ void show_configuration(int i_workload_type)
     switch(i_workload_type)
     {
         case WORKLOAD_TYPE::RANDOM:
-            std::cout << "\n\n* random workload";
+            std::cout << "\n\n* workload type : random workload";
             break;
 
         case WORKLOAD_TYPE::INFERENCE:
-            std::cout << "\n\n* inference workload";
+            std::cout << "\n\n* workload type : inference workload";
             break;
 
         case WORKLOAD_TYPE::TRAINING:
-            std::cout << "\n\n* training workload";
+            std::cout << "\n\n* workload type : training workload";
             break;
 
         case WORKLOAD_TYPE::BURST:
-            std::cout << "\n\n* burst workload";
+            std::cout << "\n\n* workload type : burst workload";
             break;
 
         case WORKLOAD_TYPE::CHECKPOINT:
-            std::cout << "\n\n* checkpoint workload";
+            std::cout << "\n\n* workload type : checkpoint workload";
+            break;
+
+        default:
+            break;
+    }
+
+        switch(i_scheduling_policy)
+    {
+        case SCHEDULING_POLICY::FCFS:
+            std::cout << "\n\n* scheduling policy : First-Come-First-Served";
+            break;
+
+        case SCHEDULING_POLICY::READ_FIRST:
+            std::cout << "\n\n* scheduling policy : Read-Priority";
             break;
 
         default:
@@ -70,28 +84,32 @@ void show_configuration(int i_workload_type)
 #define DEFAULT_BUFFER_SIZE 32
 #define DEFAULT_ITERATION 8192
 #define DEFAULT_RANDOM_WORKLOAD 0
+#define DEFAULT_SCHEDULING_POLICY_FCFS 0
 
 int main(int argc, char* argv[]){
     srand(42);
 
-    int workload_type;
+    WORKLOAD_TYPE workload_type;
 	int max_data_buffer_size;
     int iteration_count;
+    SCHEDULING_POLICY scheduling_policy;
 
-    if(argc == 4) {
-        workload_type = parse_argv(argv, 1);
+    if(argc == 5) {
+        workload_type = static_cast<WORKLOAD_TYPE>(parse_argv(argv, 1));
         max_data_buffer_size = parse_argv(argv, 2);
         iteration_count = parse_argv(argv, 3);
+        scheduling_policy = static_cast<SCHEDULING_POLICY>(parse_argv(argv, 4));
     }
     else {
-        workload_type = DEFAULT_RANDOM_WORKLOAD;
+        workload_type = static_cast<WORKLOAD_TYPE>(DEFAULT_RANDOM_WORKLOAD);
         max_data_buffer_size = DEFAULT_BUFFER_SIZE;
         iteration_count = DEFAULT_ITERATION;
+        scheduling_policy = static_cast<SCHEDULING_POLICY>(DEFAULT_SCHEDULING_POLICY_FCFS);
     }
 
-    show_configuration(workload_type);
+    show_configuration(workload_type, scheduling_policy);
 	
-	ssdcontroller_t *ftl = new ssdcontroller(max_data_buffer_size);
+	ssdcontroller_t *ftl = new ssdcontroller(max_data_buffer_size, scheduling_policy);
     ftl->initialize();
 
     workload_generator_t _workload = workload_generator(WORKLOAD_TYPE(workload_type), iteration_count);

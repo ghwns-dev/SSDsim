@@ -32,7 +32,17 @@ void flashcontroller::initialize()
 		nand[block].free_pages = PAGE_PER_BLOCK;
 		nand[block].invalid_pages = 0;
 		nand[block].erased_time = 0;
-	
+
+		// [FIX 2026/08/23] erased_count was never initialized here even though
+		// every other block_t field is. nand[] is malloc'd (not calloc'd), so
+		// this field started as whatever garbage bytes happened to be in that
+		// heap memory, and get_total_erase_count()/get_erase_variation() sum
+		// it across all blocks -- producing nonsense output (e.g. "total
+		// erase of blocks : 15553137160186487780", "erase variation :
+		// 1.7579e+38") even though nothing was actually broken by the actual
+		// erase logic itself.
+		nand[block].erased_count = 0;
+
         for (uint16_t page = 0; page < PAGE_PER_BLOCK; page++) {
             nand[block].pages[page].page_status = INIT;
             nand[block].pages[page].data = NULL;
@@ -60,23 +70,30 @@ channel_t flashcontroller::get_channel(pba_t i_pba)
 	return i_pba % NUMBER_OF_CHANNEL;	
 }
 
-unit_t flashcontroller::read_page(ppa_t i_ppa) 
+unit_t flashcontroller::read_page(ppa_t i_ppa)
 {
     pba_t block = get_block_address(i_ppa);
     ppa_t page_idx = get_page_index(i_ppa);
-
-    if (nand[block].pages[page_idx].page_status != VALID) return NULL;
-
-    unit_t data = nand[block].pages[page_idx].data;
 
     // count_ticks(tREAD);
 
 	channel_t channel = get_channel(block);
 
-	// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
+	uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
 
-	channel_busy[channel] += tREAD;
-	
+	channel_busy[channel] = start_tick + tREAD;
+
+    // [FIX 2026/08/23] Moved the tREAD channel charge above the validity
+    // check. A read that lands on a stale/invalidated page still requires
+    // the SSD to actually access the NAND array to find that out -- it isn't
+    // free. Charging it here also keeps per-transaction latency accounting
+    // (completion_tick - submit_tick) consistent for every dispatched READ,
+    // not just the ones that happen to still be valid by the time they're
+    // serviced.
+    if (nand[block].pages[page_idx].page_status != VALID) return NULL;
+
+    unit_t data = nand[block].pages[page_idx].data;
+
     return data;
 }
 
@@ -97,12 +114,14 @@ ppa_t flashcontroller::find_free_page()
 		for(uint16_t page = 0; page < PAGE_PER_BLOCK; page++){
 			// count_ticks(tREAD);
 
-			channel_t channel = get_channel(block_idx);
-
-			// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
-
-			channel_busy[channel] += tREAD;
-
+			// [FIX 2026/08/23] Scanning page_status is a metadata lookup the
+			// controller keeps in DRAM, not an actual NAND array access. This
+			// used to charge a full tREAD to the channel for every page
+			// scanned while searching for a free page (tens to hundreds of
+			// scans per call as a block fills up -> inflated total cycles by
+			// up to tens of ms per single program). The real NAND access is
+			// already charged separately in program_page(), so the channel
+			// cost here has been removed.
 			uint16_t page_status = nand[block_idx].pages[page].page_status;
 			if(page_status == FREE || page_status == INIT)
 			{
@@ -133,14 +152,11 @@ pba_t flashcontroller::find_free_block()
 	// count_ticks(tREAD);
 	// 2026/07/02 tREAD 불필요, DRAM에 저장해야 할 메타데이터
 
-	if(free_block_ptr != NULL) 
+	// [FIX 2026/08/23] free_block_ptr is just a pointer kept in DRAM being
+	// returned as-is, not an actual NAND access. Removed the tREAD channel
+	// cost (and its queueing-delay calculation) that was charged here.
+	if(free_block_ptr != NULL)
 	{
-		channel_t channel = get_channel(free_block_ptr->pba);
-
-		// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
-
-		channel_busy[channel] += tREAD;
-
 		return free_block_ptr->pba;
 	}
 
@@ -158,12 +174,9 @@ pba_t flashcontroller::get_victim_block()
 	{
 		// count_ticks(tREAD);
 
-		channel_t channel = get_channel(block);
-
-		// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
-
-		channel_busy[channel] += tREAD;
-
+		// [FIX 2026/08/23] invalid_pages/erased_count are per-block metadata
+		// kept in DRAM, so scanning them to pick a GC victim is not an
+		// actual NAND access. Removed the tREAD channel cost charged here.
 		if(nand[block].invalid_pages == 0) continue;
 
 		double score = nand[block].invalid_pages - SCORE_PARAMETER * nand[block].erased_count;
@@ -190,11 +203,15 @@ page_t flashcontroller::get_page(pba_t i_pba, ppa_t i_ppa)
     uint16_t page_idx = get_page_index(i_ppa);
 
     // count_ticks(tREAD);
-	channel_t channel = get_channel(i_pba);
 
-	// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
-
-	channel_busy[channel] += tREAD;
+	// [FIX 2026/08/23] This function is only used during GC scans to check
+	// page status, and page_status is DRAM-resident metadata, so the tREAD
+	// channel cost charged here has been removed.
+	// Note: garbage_collection() also copies out the .data of VALID pages
+	// through this same call, and that copy really does require a NAND
+	// read whose cost isn't modeled anywhere right now. For better
+	// accuracy, consider splitting "status lookup" from "valid-data read"
+	// and charging tREAD only on the latter.
 
     return nand[i_pba].pages[page_idx];
 }
@@ -271,10 +288,10 @@ void flashcontroller::erase_block(pba_t i_pba)
 
 	nand[i_pba].erased_time = channel_busy[channel];
 	nand[i_pba].erased_count++;
-	
-	// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
 
-	channel_busy[channel] += tBERS;
+	uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
+
+	channel_busy[channel] = start_tick + tBERS;
 
 	return;
 }
@@ -314,7 +331,9 @@ void flashcontroller::program_page(ppa_t i_ppa, unit_t i_data)
 
 	channel_t channel = get_channel(block);
 
-	channel_busy[channel] += tPROG;
+	uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
+
+	channel_busy[channel] = start_tick + tPROG;
 
     return;
 }
@@ -326,12 +345,9 @@ uint16_t flashcontroller::get_number_of_free_blocks()
 	for(pba_t block = 0; block < MAX_BLOCK_ADDRESS; block++){
 		// count_ticks(tREAD);
 
-		channel_t channel = get_channel(block);
-
-		// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
-
-		channel_busy[channel] += tREAD;
-		
+		// [FIX 2026/08/23] Counting free_pages is a scan over DRAM
+		// metadata, not an actual NAND access. Removed the tREAD channel
+		// cost charged here.
 		if(nand[block].free_pages == PAGE_PER_BLOCK) block_cnt++;
 	}
 
@@ -343,12 +359,9 @@ bool flashcontroller::has_invalid_page()
 	for(pba_t block = 0; block < MAX_BLOCK_ADDRESS; block++){
 		// count_ticks(tREAD);
 
-		channel_t channel = get_channel(block);
-
-		// uint64_t start_tick = std::max(get_ticks(), channel_busy[channel]);
-
-		channel_busy[channel] += tREAD;
-
+		// [FIX 2026/08/23] Counting invalid_pages is a scan over DRAM
+		// metadata, not an actual NAND access. Removed the tREAD channel
+		// cost charged here.
 		if(nand[block].invalid_pages > 0) return true;
 	}
 
@@ -402,7 +415,17 @@ uint64_t flashcontroller::get_total_cycles()
 	return total_cycles;
 }
 
-void flashcontroller::show_valid_flash_pages() 
+// [FIX 2026/08/23] Exposes a single channel's current busy tick to callers.
+// Right after read_page()/program_page() sets channel_busy[channel] =
+// start_tick + cost, this value IS that transaction's completion tick, so
+// ssdcontroller::schedule_transaction() can compute per-request latency
+// (completion_tick - submit_tick) without duplicating the timing model.
+uint64_t flashcontroller::get_channel_busy(channel_t i_channel)
+{
+	return channel_busy[i_channel];
+}
+
+void flashcontroller::show_valid_flash_pages()
 {
 	std::cout << "\n* valid pages\n";
 	

@@ -79,21 +79,22 @@ bool dramcontroller::is_cmd_queue_empty()
 	return command_queue.empty();
 }
 
-void dramcontroller::push_transaction_queue(transaction_t i_trx)
+void dramcontroller::push_transaction_queue(transaction_t i_trx, bool i_is_scheduling)
 {
-    
-	count_ticks(tCMD + tDRAM);
+    // Not Actual DRAM Traffic, no timing increment
+	if(!i_is_scheduling) count_ticks(tCMD + tDRAM);
     transaction_queue.push(i_trx);
     
 	return;
 }
 
-transaction_t dramcontroller::get_transaction()
+transaction_t dramcontroller::get_transaction(bool i_is_scheduling)
 {
 	
 	if(is_transaction_queue_empty()) return { NAND_NONE, 0, 0};
 
-    count_ticks(tDRAM);
+	// Not Actual DRAM Traffic, no timing increment
+    if(!i_is_scheduling) count_ticks(tDRAM);
     transaction_t trx = transaction_queue.front();
     
 	transaction_queue.pop();
@@ -101,11 +102,11 @@ transaction_t dramcontroller::get_transaction()
 	return trx;
 }
 
-transaction_t dramcontroller::get_transaction_with_parameter(transaction_t *i_trx)
+transaction_t dramcontroller::get_transaction_with_parameter(transaction_t *i_trx, bool i_is_scheduling)
 {
 	transaction_t trx;
 
-	int total_iteration = get_transaction_queue_size();
+	int total_iteration = get_transaction_queue_size(i_is_scheduling);
 	int iteration = 0;
 
 	while(iteration < total_iteration)
@@ -128,9 +129,10 @@ transaction_t dramcontroller::get_transaction_with_parameter(transaction_t *i_tr
 	return trx;
 }
 
-int dramcontroller::get_transaction_queue_size()
+int dramcontroller::get_transaction_queue_size(bool i_is_scheduling)
 {
-	count_ticks(tDRAM);
+	// Not Actual DRAM Traffic, no timing increment
+	if(!i_is_scheduling) count_ticks(tDRAM);
     
 	return transaction_queue.size();
 }
